@@ -17,10 +17,11 @@ by opening `index.html`.
 3. **Dice rolling** — add a dice roller, display the roll
 4. **Move legality** — enforce real backgammon rules (direction, blocked points, hitting blots)
 5. **Turn structure** — alternate turns, use both dice values, handle doubles
+5a. **Dim used dice** — Once dice are wired to moves (stage 4/5), visually dim a die once its value has been used for a move that turn. Purely visual — no change to game logic, just a state check on already-tracked used dice values.
 6. **Bearing off** — endgame rules
 7. **Polish** — win detection, restart button, possible simple AI opponent
 
 Each stage is built and committed separately to keep changes small and reviewable.
 
 ## Status
-🚧 In progress — currently on Stage 1.
+🚧 In progress — stages 1-3 complete (static board, checker movement, dice rolling). Next up: Stage 4 (move legality).
