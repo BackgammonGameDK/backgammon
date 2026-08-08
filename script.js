@@ -42,3 +42,31 @@ board.addEventListener('click', (event) => {
 
   deselect();
 });
+
+const diceContainer = document.querySelector('#dice');
+const rollButton = document.querySelector('#roll-button');
+
+function rollDie() {
+  return Math.floor(Math.random() * 6) + 1;
+}
+
+function createDie(value) {
+  const die = document.createElement('div');
+  die.className = 'die';
+  die.dataset.value = value;
+  for (let i = 0; i < 9; i++) {
+    die.appendChild(document.createElement('span')).className = 'pip';
+  }
+  return die;
+}
+
+function rollDice() {
+  const first = rollDie();
+  const second = rollDie();
+  const values = first === second ? [first, first, first, first] : [first, second];
+
+  diceContainer.innerHTML = '';
+  values.forEach((value) => diceContainer.appendChild(createDie(value)));
+}
+
+rollButton.addEventListener('click', rollDice);
