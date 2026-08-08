@@ -25,4 +25,4 @@ by opening `index.html`.
 Each stage is built and committed separately to keep changes small and reviewable.
 
 ## Status
-🚧 In progress — stages 1-5 complete (static board, checker movement, dice rolling, move legality, turn structure). Next up: Stage 5b (bar re-entry) — a checker sent to the bar currently has no way back into play.
+🚧 In progress — stages 1-5, 5a, and 5b complete (static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry). Next up: Stage 6 (bearing off).

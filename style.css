@@ -72,7 +72,8 @@ body {
   background: #222;
 }
 
-.die.used {
+.die.played,
+.die.forfeited {
   opacity: 0.35;
 }
 

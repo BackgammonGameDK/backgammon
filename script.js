@@ -106,7 +106,7 @@ function attemptMove(checker, toPoint) {
   }
 
   toPoint.appendChild(checker);
-  die.classList.add('used');
+  die.classList.add('played');
   deselect();
   checkDiceAvailability();
 }
@@ -142,7 +142,7 @@ function rollDice() {
 }
 
 function getAvailableDice() {
-  return [...diceContainer.querySelectorAll('.die:not(.used)')];
+  return [...diceContainer.querySelectorAll('.die:not(.played)')];
 }
 
 function findMatchingDie(distance) {
@@ -169,20 +169,24 @@ function canUseDie(value) {
 }
 
 function checkDiceAvailability() {
-  const forfeited = [];
+  const remaining = getAvailableDice();
 
-  getAvailableDice().forEach((die) => {
-    if (!canUseDie(Number(die.dataset.value))) {
-      die.classList.add('used');
-      forfeited.push(die.dataset.value);
+  if (remaining.length === 0) {
+    endTurn();
+    return;
+  }
+
+  let anyUsable = false;
+  remaining.forEach((die) => {
+    const usable = canUseDie(Number(die.dataset.value));
+    die.classList.toggle('forfeited', !usable);
+    if (usable) {
+      anyUsable = true;
     }
   });
 
-  if (forfeited.length > 0) {
-    showMessage(`No legal move for ${forfeited.join(', ')} — skipped.`);
-  }
-
-  if (getAvailableDice().length === 0) {
+  if (!anyUsable) {
+    showMessage(`No legal move for ${remaining.map((die) => die.dataset.value).join(', ')} — skipped.`);
     endTurn();
   }
 }
