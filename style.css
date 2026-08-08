@@ -46,29 +46,47 @@ body {
   align-items: center;
 }
 
-.point-down {
+/* The triangle is drawn on a background layer, not on .point itself,
+   so stacked checkers (siblings, painted above it) are never clipped
+   by the narrowing shape near the tip. */
+.point::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.point-down::before {
   clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.point-up::before {
+  clip-path: polygon(0 100%, 100% 100%, 50% 0);
+}
+
+.point-down {
   flex-direction: column;
   align-items: center;
   padding-top: 8px;
 }
 
 .point-up {
-  clip-path: polygon(0 100%, 100% 100%, 50% 0);
   flex-direction: column-reverse;
   align-items: center;
   padding-bottom: 8px;
 }
 
-.point.odd {
+.point.odd::before {
   background: #8b4513;
 }
 
-.point.even {
+.point.even::before {
   background: #f0d9b5;
 }
 
 .checker {
+  position: relative;
+  z-index: 1;
   width: 34px;
   height: 34px;
   border-radius: 50%;
