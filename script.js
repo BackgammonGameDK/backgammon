@@ -1,5 +1,6 @@
 const board = document.querySelector('.board');
 let selectedChecker = null;
+let currentPlayer = 'white';
 
 function selectChecker(checker) {
   if (selectedChecker) {
@@ -33,7 +34,7 @@ board.addEventListener('click', (event) => {
   if (checker) {
     if (checker === selectedChecker) {
       deselect();
-    } else {
+    } else if (checker.classList.contains(currentPlayer) && diceContainer.children.length > 0) {
       selectChecker(checker);
     }
     return;
@@ -71,9 +72,11 @@ function flashInvalid(point) {
 
 function attemptMove(checker, toPoint) {
   const fromPoint = checker.parentElement;
+  const distance = Math.abs(Number(toPoint.dataset.point) - Number(fromPoint.dataset.point));
+  const die = findMatchingDie(distance);
   const { legal, hitChecker } = isValidMove(checker, fromPoint, toPoint);
 
-  if (!legal) {
+  if (!legal || !die) {
     flashInvalid(toPoint);
     return;
   }
@@ -83,11 +86,15 @@ function attemptMove(checker, toPoint) {
   }
 
   toPoint.appendChild(checker);
+  die.classList.add('used');
   deselect();
+  checkDiceAvailability();
 }
 
 const diceContainer = document.querySelector('#dice');
 const rollButton = document.querySelector('#roll-button');
+const turnIndicator = document.querySelector('#turn-indicator');
+const messageEl = document.querySelector('#message');
 
 function rollDie() {
   return Math.floor(Math.random() * 6) + 1;
@@ -110,6 +117,68 @@ function rollDice() {
 
   diceContainer.innerHTML = '';
   values.forEach((value) => diceContainer.appendChild(createDie(value)));
+  rollButton.disabled = true;
+  checkDiceAvailability();
+}
+
+function getAvailableDice() {
+  return [...diceContainer.querySelectorAll('.die:not(.used)')];
+}
+
+function findMatchingDie(distance) {
+  return getAvailableDice().find((die) => Number(die.dataset.value) === distance) || null;
+}
+
+function canUseDie(value) {
+  return [...board.querySelectorAll(`.checker.${currentPlayer}`)].some((checker) => {
+    const fromPoint = checker.parentElement;
+    if (!fromPoint.classList.contains('point')) {
+      return false;
+    }
+    const fromNum = Number(fromPoint.dataset.point);
+    const toNum = currentPlayer === 'white' ? fromNum - value : fromNum + value;
+    const toPoint = document.querySelector(`.point[data-point="${toNum}"]`);
+    return toPoint ? isValidMove(checker, fromPoint, toPoint).legal : false;
+  });
+}
+
+function checkDiceAvailability() {
+  const forfeited = [];
+
+  getAvailableDice().forEach((die) => {
+    if (!canUseDie(Number(die.dataset.value))) {
+      die.classList.add('used');
+      forfeited.push(die.dataset.value);
+    }
+  });
+
+  if (forfeited.length > 0) {
+    showMessage(`No legal move for ${forfeited.join(', ')} — skipped.`);
+  }
+
+  if (getAvailableDice().length === 0) {
+    endTurn();
+  }
+}
+
+function endTurn() {
+  currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+  diceContainer.innerHTML = '';
+  rollButton.disabled = false;
+  updateTurnIndicator();
+}
+
+function updateTurnIndicator() {
+  turnIndicator.textContent = `${currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
+}
+
+function showMessage(text) {
+  messageEl.textContent = text;
+  setTimeout(() => {
+    if (messageEl.textContent === text) {
+      messageEl.textContent = '';
+    }
+  }, 3000);
 }
 
 rollButton.addEventListener('click', rollDice);

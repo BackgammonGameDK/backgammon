@@ -72,6 +72,21 @@ body {
   background: #222;
 }
 
+.die.used {
+  opacity: 0.35;
+}
+
+#turn-indicator {
+  font-weight: bold;
+  font-size: 18px;
+}
+
+#message {
+  min-height: 1.2em;
+  color: #e0a030;
+  font-style: italic;
+}
+
 #roll-button {
   padding: 10px 24px;
   font-size: 16px;
@@ -84,6 +99,11 @@ body {
 
 #roll-button:hover {
   background: #7d4e2d;
+}
+
+#roll-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .board {
