@@ -92,6 +92,7 @@ body {
   border-radius: 50%;
   margin: 2px 0;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .checker.white {
@@ -102,4 +103,8 @@ body {
 .checker.black {
   background: #222;
   border: 2px solid #000;
+}
+
+.checker.selected {
+  box-shadow: 0 0 0 3px gold;
 }
