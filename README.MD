@@ -18,10 +18,11 @@ by opening `index.html`.
 4. **Move legality** — enforce real backgammon rules (direction, blocked points, hitting blots)
 5. **Turn structure** — alternate turns, use both dice values, handle doubles
 5a. **Dim used dice** — Once dice are wired to moves (stage 4/5), visually dim a die once its value has been used for a move that turn. Purely visual — no change to game logic, just a state check on already-tracked used dice values.
+5b. **Bar re-entry** — A checker sent to the bar (stage 4) must re-enter the opponent's home board (respecting blocked points) before its owner can make any other move. Was missed when the plan was first written; hitting currently leaves a checker permanently stuck on the bar.
 6. **Bearing off** — endgame rules
 7. **Polish** — win detection, restart button, possible simple AI opponent
 
 Each stage is built and committed separately to keep changes small and reviewable.
 
 ## Status
-🚧 In progress — stages 1-3 complete (static board, checker movement, dice rolling). Next up: Stage 4 (move legality).
+🚧 In progress — stages 1-5 complete (static board, checker movement, dice rolling, move legality, turn structure). Next up: Stage 5b (bar re-entry) — a checker sent to the bar currently has no way back into play.
