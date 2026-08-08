@@ -18,23 +18,20 @@ function deselect() {
 }
 
 board.addEventListener('click', (event) => {
+  const checker = event.target.closest('.checker');
   const point = event.target.closest('.point');
 
-  if (!point) {
-    deselect();
-    return;
-  }
-
-  if (selectedChecker && point !== selectedChecker.parentElement) {
+  if (selectedChecker && point && point !== selectedChecker.parentElement) {
     attemptMove(selectedChecker, point);
     return;
   }
 
-  const checker = event.target.closest('.checker');
   if (checker) {
+    const barCheckers = getBarCheckers(currentPlayer);
+    const mustClearBarFirst = barCheckers.length > 0 && !isOnBar(checker);
     if (checker === selectedChecker) {
       deselect();
-    } else if (checker.classList.contains(currentPlayer) && diceContainer.children.length > 0) {
+    } else if (checker.classList.contains(currentPlayer) && diceContainer.children.length > 0 && !mustClearBarFirst) {
       selectChecker(checker);
     }
     return;
@@ -43,15 +40,33 @@ board.addEventListener('click', (event) => {
   deselect();
 });
 
+function isOnBar(checker) {
+  return checker.parentElement.classList.contains('bar-checkers');
+}
+
+function colorOf(checker) {
+  return checker.classList.contains('white') ? 'white' : 'black';
+}
+
+function getBarCheckers(color) {
+  return [...document.querySelectorAll(`.bar-checkers .checker.${color}`)];
+}
+
+function entryPoint(color, dieValue) {
+  return color === 'white' ? 25 - dieValue : dieValue;
+}
+
 function isValidMove(checker, fromPoint, toPoint) {
-  const color = checker.classList.contains('white') ? 'white' : 'black';
+  const color = colorOf(checker);
   const opposingColor = color === 'white' ? 'black' : 'white';
-  const fromNum = Number(fromPoint.dataset.point);
   const toNum = Number(toPoint.dataset.point);
 
-  const movingForward = color === 'white' ? toNum < fromNum : toNum > fromNum;
-  if (!movingForward) {
-    return { legal: false };
+  if (fromPoint.classList.contains('point')) {
+    const fromNum = Number(fromPoint.dataset.point);
+    const movingForward = color === 'white' ? toNum < fromNum : toNum > fromNum;
+    if (!movingForward) {
+      return { legal: false };
+    }
   }
 
   const opposingCount = toPoint.querySelectorAll(`.checker.${opposingColor}`).length;
@@ -72,8 +87,13 @@ function flashInvalid(point) {
 
 function attemptMove(checker, toPoint) {
   const fromPoint = checker.parentElement;
-  const distance = Math.abs(Number(toPoint.dataset.point) - Number(fromPoint.dataset.point));
-  const die = findMatchingDie(distance);
+  const color = colorOf(checker);
+  const toNum = Number(toPoint.dataset.point);
+
+  const die = isOnBar(checker)
+    ? getAvailableDice().find((d) => entryPoint(color, Number(d.dataset.value)) === toNum) || null
+    : findMatchingDie(Math.abs(toNum - Number(fromPoint.dataset.point)));
+
   const { legal, hitChecker } = isValidMove(checker, fromPoint, toPoint);
 
   if (!legal || !die) {
@@ -130,6 +150,12 @@ function findMatchingDie(distance) {
 }
 
 function canUseDie(value) {
+  const barCheckers = getBarCheckers(currentPlayer);
+  if (barCheckers.length > 0) {
+    const toPoint = document.querySelector(`.point[data-point="${entryPoint(currentPlayer, value)}"]`);
+    return isValidMove(barCheckers[0], barCheckers[0].parentElement, toPoint).legal;
+  }
+
   return [...board.querySelectorAll(`.checker.${currentPlayer}`)].some((checker) => {
     const fromPoint = checker.parentElement;
     if (!fromPoint.classList.contains('point')) {
