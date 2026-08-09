@@ -30,6 +30,7 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
 1. AI opponent
 2. When selecting a piece, available moves become visible.
 3. Selecting a piece with no valid moves is not possible.
+4. Roll and Restart buttons are too close together, risk of restarting the game instead of rolling.
 
 ## Status
 ✅ Core build plan complete — stages 1-7 (including 5a and 5b) are all done: static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off, win detection, and restart. The game is fully playable end to end. Remaining work lives in Future Improvements above.
