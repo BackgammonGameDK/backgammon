@@ -20,6 +20,12 @@ function deselect() {
 board.addEventListener('click', (event) => {
   const checker = event.target.closest('.checker');
   const point = event.target.closest('.point');
+  const offTray = event.target.closest('.off');
+
+  if (selectedChecker && offTray && offTray.dataset.owner === colorOf(selectedChecker) && isHomeReady(colorOf(selectedChecker))) {
+    attemptBearOff(selectedChecker, offTray);
+    return;
+  }
 
   if (selectedChecker && point && point !== selectedChecker.parentElement) {
     attemptMove(selectedChecker, point);
@@ -54,6 +60,53 @@ function getBarCheckers(color) {
 
 function entryPoint(color, dieValue) {
   return color === 'white' ? 25 - dieValue : dieValue;
+}
+
+function checkersInPlay(color) {
+  return [...document.querySelectorAll(`.point .checker.${color}`)];
+}
+
+function pipsFromOff(color, pointNumber) {
+  return color === 'white' ? pointNumber : 25 - pointNumber;
+}
+
+function isHomeReady(color) {
+  if (getBarCheckers(color).length > 0) {
+    return false;
+  }
+  return checkersInPlay(color).every((checker) => {
+    const n = Number(checker.parentElement.dataset.point);
+    return color === 'white' ? n <= 6 : n >= 19;
+  });
+}
+
+function isFarthestCheckerPips(color, pips) {
+  return !checkersInPlay(color).some((c) => pipsFromOff(color, Number(c.parentElement.dataset.point)) > pips);
+}
+
+function findBearOffDie(checker) {
+  const color = colorOf(checker);
+  const pips = pipsFromOff(color, Number(checker.parentElement.dataset.point));
+
+  const exact = getAvailableDice().find((d) => Number(d.dataset.value) === pips);
+  if (exact) {
+    return exact;
+  }
+
+  if (!isFarthestCheckerPips(color, pips)) {
+    return null;
+  }
+  return getAvailableDice().find((d) => Number(d.dataset.value) > pips) || null;
+}
+
+function canBearOffWithValue(color, value) {
+  if (!isHomeReady(color)) {
+    return false;
+  }
+  return checkersInPlay(color).some((checker) => {
+    const pips = pipsFromOff(color, Number(checker.parentElement.dataset.point));
+    return pips === value || (value > pips && isFarthestCheckerPips(color, pips));
+  });
 }
 
 function isValidMove(checker, fromPoint, toPoint) {
@@ -111,6 +164,20 @@ function attemptMove(checker, toPoint) {
   checkDiceAvailability();
 }
 
+function attemptBearOff(checker, offTray) {
+  const die = findBearOffDie(checker);
+
+  if (!die) {
+    flashInvalid(offTray);
+    return;
+  }
+
+  offTray.querySelector('.off-checkers').appendChild(checker);
+  die.classList.add('played');
+  deselect();
+  checkDiceAvailability();
+}
+
 const diceContainer = document.querySelector('#dice');
 const rollButton = document.querySelector('#roll-button');
 const turnIndicator = document.querySelector('#turn-indicator');
@@ -156,7 +223,7 @@ function canUseDie(value) {
     return isValidMove(barCheckers[0], barCheckers[0].parentElement, toPoint).legal;
   }
 
-  return [...board.querySelectorAll(`.checker.${currentPlayer}`)].some((checker) => {
+  const hasNormalMove = [...board.querySelectorAll(`.checker.${currentPlayer}`)].some((checker) => {
     const fromPoint = checker.parentElement;
     if (!fromPoint.classList.contains('point')) {
       return false;
@@ -166,6 +233,8 @@ function canUseDie(value) {
     const toPoint = document.querySelector(`.point[data-point="${toNum}"]`);
     return toPoint ? isValidMove(checker, fromPoint, toPoint).legal : false;
   });
+
+  return hasNormalMove || canBearOffWithValue(currentPlayer, value);
 }
 
 function checkDiceAvailability() {

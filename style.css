@@ -108,7 +108,7 @@ body {
 }
 
 .board {
-  width: 900px;
+  width: 950px;
   height: 640px;
   margin: 20px auto;
   background: #4a2c17;
@@ -139,6 +139,23 @@ body {
 }
 
 .bar-checkers {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.off {
+  width: 40px;
+  max-height: 100%;
+  overflow-y: auto;
+  background: #2e1a0e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.off-checkers {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -190,7 +207,8 @@ body {
   background: #f0d9b5;
 }
 
-.point.invalid-target {
+.point.invalid-target,
+.off.invalid-target {
   box-shadow: inset 0 0 0 4px #c0392b;
 }
 
