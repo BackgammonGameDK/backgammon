@@ -28,6 +28,8 @@ Each stage is built and committed separately to keep changes small and reviewabl
 Ideas beyond the core build plan, not scheduled to a specific stage:
 
 1. AI opponent
+2. Pip count display — each player's total pips remaining to bear off. Only visible when Hints is enabled.
+3. Move animation — checkers slide to their destination instead of jumping there instantly.
 
 ## Status
 ✅ Core build plan complete — stages 1-7 (including 5a and 5b) are all done: static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off, win detection, and restart. The game is fully playable end to end.
