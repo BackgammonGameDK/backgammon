@@ -9,6 +9,7 @@ function selectChecker(checker) {
   }
   selectedChecker = checker;
   selectedChecker.classList.add('selected');
+  highlightLegalTargets(checker);
 }
 
 function deselect() {
@@ -16,6 +17,7 @@ function deselect() {
     selectedChecker.classList.remove('selected');
     selectedChecker = null;
   }
+  clearLegalTargets();
 }
 
 board.addEventListener('click', (event) => {
@@ -114,6 +116,37 @@ function canBearOffWithValue(color, value) {
   });
 }
 
+function getLegalDestinations(checker) {
+  const color = colorOf(checker);
+  const destinations = new Set();
+
+  if (isOnBar(checker)) {
+    getAvailableDice().forEach((die) => {
+      const toPoint = document.querySelector(`.point[data-point="${entryPoint(color, Number(die.dataset.value))}"]`);
+      if (toPoint && isValidMove(checker, checker.parentElement, toPoint).legal) {
+        destinations.add(toPoint);
+      }
+    });
+    return [...destinations];
+  }
+
+  const fromNum = Number(checker.parentElement.dataset.point);
+  getAvailableDice().forEach((die) => {
+    const value = Number(die.dataset.value);
+    const toNum = color === 'white' ? fromNum - value : fromNum + value;
+    const toPoint = document.querySelector(`.point[data-point="${toNum}"]`);
+    if (toPoint && isValidMove(checker, checker.parentElement, toPoint).legal) {
+      destinations.add(toPoint);
+    }
+  });
+
+  if (isHomeReady(color) && findBearOffDie(checker)) {
+    destinations.add(document.querySelector(`.off[data-owner="${color}"]`));
+  }
+
+  return [...destinations];
+}
+
 function isValidMove(checker, fromPoint, toPoint) {
   const color = colorOf(checker);
   const opposingColor = color === 'white' ? 'black' : 'white';
@@ -206,6 +239,20 @@ const restartButton = document.querySelector('#restart-button');
 const gameOverEl = document.querySelector('#game-over');
 const turnIndicator = document.querySelector('#turn-indicator');
 const messageEl = document.querySelector('#message');
+const hintsToggle = document.querySelector('#hints-toggle');
+
+let hintsEnabled = false;
+
+function highlightLegalTargets(checker) {
+  if (!hintsEnabled) {
+    return;
+  }
+  getLegalDestinations(checker).forEach((el) => el.classList.add('legal-target'));
+}
+
+function clearLegalTargets() {
+  document.querySelectorAll('.legal-target').forEach((el) => el.classList.remove('legal-target'));
+}
 
 function rollDie() {
   return Math.floor(Math.random() * 6) + 1;
@@ -306,3 +353,10 @@ function showMessage(text) {
 
 rollButton.addEventListener('click', rollDice);
 restartButton.addEventListener('click', () => location.reload());
+hintsToggle.addEventListener('change', () => {
+  hintsEnabled = hintsToggle.checked;
+  clearLegalTargets();
+  if (hintsEnabled && selectedChecker) {
+    highlightLegalTargets(selectedChecker);
+  }
+});
