@@ -25,4 +25,4 @@ by opening `index.html`.
 Each stage is built and committed separately to keep changes small and reviewable.
 
 ## Status
-🚧 In progress — stages 1-5, 5a, and 5b complete (static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry). Next up: Stage 6 (bearing off).
+🚧 In progress — stages 1-6, 5a, and 5b complete (static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off). Next up: Stage 7 (polish — win detection, restart button, possible AI opponent).
