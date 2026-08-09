@@ -32,4 +32,4 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
 3. Selecting a piece with no valid moves is not possible.
 
 ## Status
-🚧 In progress — stages 1-6, 5a, and 5b complete (static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off). Next up: Stage 7 (polish — win detection, restart button).
+✅ Core build plan complete — stages 1-7 (including 5a and 5b) are all done: static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off, win detection, and restart. The game is fully playable end to end. Remaining work lives in Future Improvements above.
