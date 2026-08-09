@@ -82,6 +82,14 @@ function pipsFromOff(color, pointNumber) {
   return color === 'white' ? pointNumber : 25 - pointNumber;
 }
 
+function pipCount(color) {
+  const inPlay = checkersInPlay(color).reduce(
+    (sum, c) => sum + pipsFromOff(color, Number(c.parentElement.dataset.point)),
+    0
+  );
+  return inPlay + getBarCheckers(color).length * 25;
+}
+
 function isHomeReady(color) {
   if (getBarCheckers(color).length > 0) {
     return false;
@@ -203,6 +211,7 @@ function attemptMove(checker, toPoint) {
 
   toPoint.appendChild(checker);
   die.classList.add('played');
+  updatePipCounts();
   deselect();
   checkDiceAvailability();
 }
@@ -217,6 +226,7 @@ function attemptBearOff(checker, offTray) {
 
   offTray.querySelector('.off-checkers').appendChild(checker);
   die.classList.add('played');
+  updatePipCounts();
   deselect();
 
   if (isGameWon(colorOf(checker))) {
@@ -245,6 +255,7 @@ const gameOverEl = document.querySelector('#game-over');
 const turnIndicator = document.querySelector('#turn-indicator');
 const messageEl = document.querySelector('#message');
 const hintsToggle = document.querySelector('#hints-toggle');
+const pipCountEl = document.querySelector('#pip-count');
 
 let hintsEnabled = false;
 
@@ -253,6 +264,10 @@ function highlightLegalTargets(checker) {
     return;
   }
   getLegalDestinations(checker).forEach((el) => el.classList.add('legal-target'));
+}
+
+function updatePipCounts() {
+  pipCountEl.textContent = `Pips — White: ${pipCount('white')} · Black: ${pipCount('black')}`;
 }
 
 function clearLegalTargets() {
@@ -360,8 +375,11 @@ rollButton.addEventListener('click', rollDice);
 restartButton.addEventListener('click', () => location.reload());
 hintsToggle.addEventListener('change', () => {
   hintsEnabled = hintsToggle.checked;
+  pipCountEl.hidden = !hintsEnabled;
   clearLegalTargets();
   if (hintsEnabled && selectedChecker) {
     highlightLegalTargets(selectedChecker);
   }
 });
+
+updatePipCounts();

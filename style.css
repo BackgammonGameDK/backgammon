@@ -88,6 +88,11 @@ body {
   cursor: pointer;
 }
 
+#pip-count {
+  font-size: 14px;
+  color: #ccc;
+}
+
 #message {
   min-height: 1.2em;
   color: #e0a030;
