@@ -95,8 +95,7 @@ body {
   color: #4caf50;
 }
 
-#roll-button,
-#restart-button {
+#roll-button {
   padding: 10px 24px;
   font-size: 16px;
   color: #fff;
@@ -106,14 +105,31 @@ body {
   cursor: pointer;
 }
 
-#roll-button:hover,
-#restart-button:hover {
+#roll-button:hover {
   background: #7d4e2d;
 }
 
 #roll-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+#restart-button {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #ccc;
+  background: transparent;
+  border: 1px solid #666;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#restart-button:hover {
+  background: #3a3a3a;
+  color: #fff;
 }
 
 .board {
