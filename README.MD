@@ -28,10 +28,10 @@ Each stage is built and committed separately to keep changes small and reviewabl
 Ideas beyond the core build plan, not scheduled to a specific stage:
 
 1. AI opponent
-2. Pip count display — each player's total pips remaining to bear off. Only visible when Hints is enabled.
-3. Move animation — checkers slide to their destination instead of jumping there instantly.
+2. Move animation — checkers slide to their destination instead of jumping there instantly.
+3. Color improvements — `.legal-target` (green) and `.invalid-target` (red) are the classic red/green pair that's hardest to distinguish for colorblind users; consider different colors and/or a non-color cue (e.g. a dashed vs. solid border).
 
 ## Status
 ✅ Core build plan complete — stages 1-7 (including 5a and 5b) are all done: static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off, win detection, and restart. The game is fully playable end to end.
 
-Since then: Restart was separated from Roll to prevent mis-clicks, a "Hints" toggle was added to highlight a selected checker's legal destinations on request, and a checker with no legal moves can no longer be selected at all. AI opponent remains the only open item in Future Improvements above.
+Since then: Restart was separated from Roll to prevent mis-clicks, a "Hints" toggle was added to highlight a selected checker's legal destinations on request, a checker with no legal moves can no longer be selected at all, and a pip count display (shown when Hints is enabled) was added. AI opponent and move animation remain the open items in Future Improvements above.
