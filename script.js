@@ -44,7 +44,12 @@ board.addEventListener('click', (event) => {
     const mustClearBarFirst = barCheckers.length > 0 && !isOnBar(checker);
     if (checker === selectedChecker) {
       deselect();
-    } else if (checker.classList.contains(currentPlayer) && diceContainer.children.length > 0 && !mustClearBarFirst) {
+    } else if (
+      checker.classList.contains(currentPlayer) &&
+      diceContainer.children.length > 0 &&
+      !mustClearBarFirst &&
+      getLegalDestinations(checker).length > 0
+    ) {
       selectChecker(checker);
     }
     return;
