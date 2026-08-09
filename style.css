@@ -88,7 +88,15 @@ body {
   font-style: italic;
 }
 
-#roll-button {
+#game-over {
+  font-weight: bold;
+  font-size: 22px;
+  min-height: 1.4em;
+  color: #4caf50;
+}
+
+#roll-button,
+#restart-button {
   padding: 10px 24px;
   font-size: 16px;
   color: #fff;
@@ -98,7 +106,8 @@ body {
   cursor: pointer;
 }
 
-#roll-button:hover {
+#roll-button:hover,
+#restart-button:hover {
   background: #7d4e2d;
 }
 

@@ -1,6 +1,7 @@
 const board = document.querySelector('.board');
 let selectedChecker = null;
 let currentPlayer = 'white';
+let gameOver = false;
 
 function selectChecker(checker) {
   if (selectedChecker) {
@@ -18,6 +19,10 @@ function deselect() {
 }
 
 board.addEventListener('click', (event) => {
+  if (gameOver) {
+    return;
+  }
+
   const checker = event.target.closest('.checker');
   const point = event.target.closest('.point');
   const offTray = event.target.closest('.off');
@@ -175,11 +180,30 @@ function attemptBearOff(checker, offTray) {
   offTray.querySelector('.off-checkers').appendChild(checker);
   die.classList.add('played');
   deselect();
+
+  if (isGameWon(colorOf(checker))) {
+    endGame(colorOf(checker));
+    return;
+  }
+
   checkDiceAvailability();
+}
+
+function isGameWon(color) {
+  return document.querySelectorAll(`.off[data-owner="${color}"] .checker.${color}`).length === 15;
+}
+
+function endGame(color) {
+  gameOver = true;
+  diceContainer.innerHTML = '';
+  rollButton.disabled = true;
+  gameOverEl.textContent = `${color === 'white' ? 'White' : 'Black'} wins!`;
 }
 
 const diceContainer = document.querySelector('#dice');
 const rollButton = document.querySelector('#roll-button');
+const restartButton = document.querySelector('#restart-button');
+const gameOverEl = document.querySelector('#game-over');
 const turnIndicator = document.querySelector('#turn-indicator');
 const messageEl = document.querySelector('#message');
 
@@ -281,3 +305,4 @@ function showMessage(text) {
 }
 
 rollButton.addEventListener('click', rollDice);
+restartButton.addEventListener('click', () => location.reload());
