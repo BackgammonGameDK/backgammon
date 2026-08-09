@@ -189,6 +189,33 @@ function flashInvalid(point) {
   setTimeout(() => point.classList.remove('invalid-target'), 300);
 }
 
+function animateMove(checker, moveFn) {
+  const before = checker.getBoundingClientRect();
+  moveFn();
+  const after = checker.getBoundingClientRect();
+  const dx = before.left - after.left;
+  const dy = before.top - after.top;
+
+  if (dx === 0 && dy === 0) {
+    return;
+  }
+
+  checker.style.transform = `translate(${dx}px, ${dy}px)`;
+  requestAnimationFrame(() => {
+    checker.classList.add('animating');
+    checker.style.transform = '';
+  });
+
+  checker.addEventListener(
+    'transitionend',
+    () => {
+      checker.classList.remove('animating');
+      checker.style.transform = '';
+    },
+    { once: true }
+  );
+}
+
 function attemptMove(checker, toPoint) {
   const fromPoint = checker.parentElement;
   const color = colorOf(checker);
@@ -206,10 +233,11 @@ function attemptMove(checker, toPoint) {
   }
 
   if (hitChecker) {
-    toPoint.closest('.board-row').querySelector('.bar-checkers').appendChild(hitChecker);
+    const bar = toPoint.closest('.board-row').querySelector('.bar-checkers');
+    animateMove(hitChecker, () => bar.appendChild(hitChecker));
   }
 
-  toPoint.appendChild(checker);
+  animateMove(checker, () => toPoint.appendChild(checker));
   die.classList.add('played');
   updatePipCounts();
   deselect();
@@ -224,7 +252,7 @@ function attemptBearOff(checker, offTray) {
     return;
   }
 
-  offTray.querySelector('.off-checkers').appendChild(checker);
+  animateMove(checker, () => offTray.querySelector('.off-checkers').appendChild(checker));
   die.classList.add('played');
   updatePipCounts();
   deselect();

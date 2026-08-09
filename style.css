@@ -265,6 +265,10 @@ body {
   cursor: pointer;
 }
 
+.checker.animating {
+  transition: transform 200ms ease-out;
+}
+
 .checker.white {
   background: #f5f5f5;
   border: 2px solid #999;
