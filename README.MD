@@ -28,9 +28,8 @@ Each stage is built and committed separately to keep changes small and reviewabl
 Ideas beyond the core build plan, not scheduled to a specific stage:
 
 1. AI opponent
-2. Color improvements — `.legal-target` (green) and `.invalid-target` (red) are the classic red/green pair that's hardest to distinguish for colorblind users; consider different colors and/or a non-color cue (e.g. a dashed vs. solid border).
 
 ## Status
 ✅ Core build plan complete — stages 1-7 (including 5a and 5b) are all done: static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off, win detection, and restart. The game is fully playable end to end.
 
-Since then: Restart was separated from Roll to prevent mis-clicks, a "Hints" toggle was added to highlight a selected checker's legal destinations on request, a checker with no legal moves can no longer be selected at all, a pip count display (shown when Hints is enabled) was added, and checkers now animate (slide) into place instead of jumping. AI opponent and color improvements remain the open items in Future Improvements above.
+Since then: Restart was separated from Roll to prevent mis-clicks, a "Hints" toggle was added to highlight a selected checker's legal destinations on request, a checker with no legal moves can no longer be selected at all, a pip count display (shown when Hints is enabled) was added, checkers now animate (slide) into place instead of jumping, and the legal/invalid highlight colors were made colorblind-safe (blue solid ring vs. orange dashed ring, instead of red/green). AI opponent is now the only open item in Future Improvements above.
