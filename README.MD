@@ -20,9 +20,16 @@ by opening `index.html`.
 5a. **Dim used dice** — Once dice are wired to moves (stage 4/5), visually dim a die once its value has been used for a move that turn. Purely visual — no change to game logic, just a state check on already-tracked used dice values.
 5b. **Bar re-entry** — A checker sent to the bar (stage 4) must re-enter the opponent's home board (respecting blocked points) before its owner can make any other move. Was missed when the plan was first written; hitting currently leaves a checker permanently stuck on the bar.
 6. **Bearing off** — endgame rules
-7. **Polish** — win detection, restart button, possible simple AI opponent
+7. **Polish** — win detection, restart button
 
 Each stage is built and committed separately to keep changes small and reviewable.
 
+## Future Improvements
+Ideas beyond the core build plan, not scheduled to a specific stage:
+
+1. AI opponent
+2. When selecting a piece, available moves become visible.
+3. Selecting a piece with no valid moves is not possible.
+
 ## Status
-🚧 In progress — stages 1-6, 5a, and 5b complete (static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off). Next up: Stage 7 (polish — win detection, restart button, possible AI opponent).
+🚧 In progress — stages 1-6, 5a, and 5b complete (static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off). Next up: Stage 7 (polish — win detection, restart button).
