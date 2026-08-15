@@ -48,6 +48,51 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    the URL, no accounts; friend-level trust, so each client validates its own
    moves and database rules only restrict writing to a room you already know
    the code for, not to whose turn it is.
+3. UX/bug findings from a manual playtest (2026-08-15), highest-severity
+   first, not yet fixed:
+   - **Mobile Restart overlaps the turn indicator and can eat a real tap.**
+     At 375px width the `h1` is hidden (see the small-screen media query in
+     `style.css`) so `#turn-indicator`'s text rises into the fixed
+     `#restart-button`'s hit area — confirmed via bounding-rect overlap at
+     that width. Tapping the tail of a long turn message (e.g. "…opening
+     roll: White 1, Black 2") can hit Restart instead and wipe the game.
+   - **Can't switch selection directly between two of your own checkers.**
+     Selecting checker A, then clicking checker B (same color), doesn't
+     re-select B — `board`'s click handler (`script.js`) sees any click
+     inside a `.point` as a move attempt once something is selected, so it
+     tries to move A onto B's point, fails, and flashes B's point invalid
+     instead of just selecting B. Requires deselecting first, which isn't
+     obvious and interrupts play on every turn.
+   - **Rejected clicks are silent.** Bar priority, no legal destinations,
+     wrong color, dice not yet rolled — none of these show a message,
+     unlike the existing "No legal move for N — skipped" text. `showMessage`
+     already exists and is used for exactly three other cases.
+   - **No hit announcement.** Sending an opponent's blot to the bar changes
+     the board with no accompanying message — matters most online, where
+     the other player has no other cue it happened.
+   - **Turn indicator is stale after a win** — still reads "White's turn"
+     next to "White wins!" once `state.winner` is set.
+   - **The skip message and the reason for it disappear together.**
+     `showMessage`'s 3s auto-clear (`script.js`) removes the only record of
+     *why* a turn was skipped at the same time the now-empty dice do.
+   - **The board is keyboard/screen-reader unreachable.** Only 6 controls
+     (Restart, Hints, Play Online, room code, Join, Roll) are in the
+     accessible tree; points and checkers are plain unlabeled `div`s with
+     no role or `tabindex`, so a keyboard-only player can roll but not move.
+   - **Bear-off tray scrolls** — 15 checkers don't fit its fixed height, so
+     the pile has to be scrolled to see fully; a count badge would read
+     better than a scrollbar.
+   - **Latent:** `animateMove` (`script.js`) clears its FLIP transform via
+     `requestAnimationFrame` plus a `transitionend` listener registered
+     `{once: true}`; neither fires in a backgrounded/hidden tab, which is
+     exactly the state a tab sits in while waiting on an opponent's move
+     online. Queued rAF callbacks do run once the tab is shown again, so
+     this is more a fragility than a confirmed bug, but it's worth clearing
+     the transform defensively rather than depending on either callback.
+   - **Minor:** `handleRoomUpdate` (`script.js`) clears `selectedFrom` on
+     every room update; `commitState`'s hot-seat branch doesn't, leaving it
+     to each caller. Every current caller does, so nothing is broken today,
+     but it's an easy trap for a future one.
 
 ## Architecture
 
