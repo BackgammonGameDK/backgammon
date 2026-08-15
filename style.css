@@ -51,6 +51,17 @@ body {
   margin-bottom: 12px;
 }
 
+/* Column stacking by default (identical to the un-wrapped elements' previous
+   layout, so the small-screen --chrome measurement below is untouched) - a
+   wide-screen media query switches this to one row, which is what actually
+   frees up the vertical space the .board height calc() feeds on. */
+.status-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
 .dice {
   display: flex;
   gap: 12px;
@@ -584,6 +595,36 @@ button,
   font-size: 13px;
   color: #e0a030;
   font-style: italic;
+}
+
+/* ---- Wide screens ------------------------------------------------------
+   Desktop windows are wide relative to the 950:640 board, so the .board
+   height calc() (see --chrome above) - not the 1300px width cap - is
+   normally what's holding the board back, and all that spare width next to
+   it goes unused. Collapsing the turn indicator / hints checkbox / pip
+   count from three stacked rows into one reclaims real vertical space for
+   the calc() to spend on the board instead - it's the same information
+   only laid out where desktop actually has room for it. Threshold
+   complements the small-screen query's max-width: 900px exactly, so
+   nothing is ever caught between the two. */
+@media (min-width: 901px) {
+  :root {
+    /* Same 12 (board margin-bottom) + 20 (body padding-bottom) = 32px tail
+       as the base value; only the before-the-board portion changes, to
+       284px, since collapsing .status-row into one row saves two stacked
+       rows' worth of height (but not two full 8px gaps - flex-wrap still
+       needs its own row gap). Measured directly (see the base --chrome
+       comment for the method); re-measure if .status-row's content
+       changes. */
+    --chrome: 316px;
+  }
+
+  .status-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 16px;
+  }
 }
 
 /* ---- Small screens ----------------------------------------------------
