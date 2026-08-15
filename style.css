@@ -9,18 +9,16 @@
      have to stay tappable. */
   --checker-in-point: 52.5%;
   --checker-in-tray: 86%;
-  /* Vertical space the header (title through Roll/messages) takes up above
-     the board. Estimated at 308px from the previous measured value (335px)
-     minus the margin/gap trims made alongside this change - not yet
-     re-measured against a real render, unlike the rest of this file's
-     measurements. Re-measure the same way (a window tall enough that the
-     board isn't itself height-constrained, then read .board's top offset)
-     if this turns out to be off, or if the header gains or loses a row.
-
-     Caps the board's height on any window short enough to need it - which
-     is most non-maximized desktop windows, not just small/mobile screens;
-     see the comment on .board below for why. */
-  --chrome: 308px;
+  /* Vertical space taken above AND below the board: header (title through
+     Roll/messages) measured at 311px, plus the board's own 12px bottom
+     margin, which the height formula below has no other way to account
+     for (it only computes where the board's top edge is; a margin past
+     its bottom edge isn't part of that). Together, 323px. Skipping the
+     bottom margin here once already caused a real, if small, overflow
+     past the viewport - re-measure the same way (a window tall enough
+     that the board isn't itself height-constrained, then .board's top
+     offset) plus re-add the current bottom margin if either changes. */
+  --chrome: 323px;
 }
 
 * {
@@ -324,9 +322,10 @@ body {
 
    The height term is usually the binding one on a typical desktop window
    (they're wider than tall relative to a 950:640 board), which is why
-   trimming --chrome and this margin matters more, for most windows, than
-   the width ceiling does - the ceiling mainly helps once a window is tall
-   enough (roughly --chrome + 813px) to reach it at all. */
+   trimming --chrome matters more, for most windows, than the width
+   ceiling does - the ceiling only matters once a window is tall enough
+   (roughly --chrome + 876px, since 1300px wide needs 876px of height at
+   this aspect ratio) to reach it at all. */
 .board {
   width: 100%;
   max-width: min(1300px, calc((100dvh - var(--chrome)) * 950 / 640));
