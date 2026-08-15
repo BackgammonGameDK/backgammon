@@ -36,9 +36,12 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    Database — two separate devices, anywhere, can share a live game. See
    Architecture below for how. Presence and disconnect handling are done too
    (a seated player now sees "opponent disconnected" rather than silently
-   waiting on a move that isn't coming — see Architecture). Remaining:
-   - A friendlier "share this link" flow beyond the existing room code +
-     copy-link button.
+   waiting on a move that isn't coming — see Architecture). Joining a room
+   now also has a friendlier flow beyond the original room code + copy-link
+   button: a "Join" field takes the 6-character code typed directly (no
+   link needed), and a QR code (rendered client-side, no external service)
+   lets a second device join by scanning. Pasting the full link still works
+   exactly as before.
 
    Decided up front: sync whole state snapshots rather than replaying moves
    (a dropped message can't silently desync the boards); rooms via a code in
@@ -131,3 +134,5 @@ The game is also published online (GitHub Pages) and the layout is now responsiv
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
 
 Online play now tracks presence (see Architecture): the room status line tells "waiting for opponent" (seat unclaimed) apart from "opponent disconnected" (seat claimed, but that player's connection just dropped) — previously indistinguishable, since a seat is never freed once claimed. Verified against the live Firebase project with two real tabs, including a genuine tab-close disconnect.
+
+Joining a room got friendlier: a "Join" field next to "Play Online" takes a typed 6-character room code directly, and a "QR" toggle renders a scannable code for the current link (via a small vendored, dependency-free QR generator — no network call, no external service). Pasting the full invite link still works unchanged; these are additional ways in, not replacements.

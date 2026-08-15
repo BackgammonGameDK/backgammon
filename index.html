@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -16,10 +16,20 @@
     <label id="hints-toggle-label"><input type="checkbox" id="hints-toggle"> Hints</label>
     <div id="pip-count" hidden></div>
     <div class="online-area">
-      <button id="play-online-button">Play Online</button>
+      <div id="pre-join-area">
+        <button id="play-online-button">Play Online</button>
+        <div id="join-area">
+          <input id="room-code-input" type="text" maxlength="6" placeholder="Room code" autocomplete="off">
+          <button id="join-room-button">Join</button>
+        </div>
+      </div>
       <div id="room-status" hidden>
         <span id="room-info"></span>
         <button id="copy-link-button">Copy link</button>
+        <button id="qr-toggle-button">QR</button>
+        <div id="qr-panel" hidden>
+          <div id="qr-code"></div>
+        </div>
       </div>
     </div>
     <div class="dice" id="dice"></div>
@@ -97,9 +107,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=9"></script>
-  <script src="rules.js?v=9"></script>
-  <script src="sync.js?v=9"></script>
-  <script src="script.js?v=9"></script>
+  <script src="firebase-config.js?v=10"></script>
+  <script src="qrcode-generator.js?v=10"></script>
+  <script src="rules.js?v=10"></script>
+  <script src="sync.js?v=10"></script>
+  <script src="script.js?v=10"></script>
 </body>
 </html>

@@ -287,7 +287,9 @@ body {
 }
 
 #play-online-button,
-#copy-link-button {
+#join-room-button,
+#copy-link-button,
+#qr-toggle-button {
   padding: 6px 14px;
   font-size: 13px;
   color: #ccc;
@@ -298,7 +300,9 @@ body {
 }
 
 #play-online-button:hover,
-#copy-link-button:hover {
+#join-room-button:hover,
+#copy-link-button:hover,
+#qr-toggle-button:hover {
   background: #3a3a3a;
   color: #fff;
 }
@@ -308,12 +312,59 @@ body {
    that (author beats user-agent regardless of selector specificity), so
    `display: flex` below would otherwise make the hidden attribute purely
    cosmetic - present on the element, but with no actual effect on whether
-   it's shown. Same fix, same reason, on #celebration further down. */
-#room-status[hidden] {
+   it's shown. Same fix, same reason, on #celebration further down, and on
+   #pre-join-area/#qr-panel above/below. */
+#room-status[hidden],
+#pre-join-area[hidden],
+#qr-panel[hidden] {
   display: none;
 }
 
+/* One row, holding "Play Online" and the code-entry alternative side by
+   side - kept to one row deliberately, since --chrome (see the .board
+   comment below) is a hand-measured constant that assumes the dice area's
+   current height; a row that wraps on narrow screens would silently break
+   that budget. */
+#pre-join-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#join-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#room-code-input {
+  width: 80px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #ccc;
+  background: transparent;
+  border: 1px solid #666;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#room-code-input::placeholder {
+  color: #888;
+  letter-spacing: normal;
+}
+
+#room-code-input:focus {
+  outline: none;
+  border-color: #999;
+}
+
+/* Anchors #qr-panel below, so it can float without adding to the dice
+   area's height - see #qr-panel. */
 #room-status {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -327,6 +378,27 @@ body {
    error state the player needs to act on. */
 .room-status--warning #room-info {
   color: #e0a030;
+}
+
+/* Floats above the board instead of displacing it when opened, same reason
+   #pre-join-area stays one row: --chrome is a fixed budget the board's
+   size calc() depends on, and this popover isn't part of it. */
+#qr-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  padding: 10px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 15;
+}
+
+#qr-code svg {
+  display: block;
+  width: 120px;
+  height: 120px;
 }
 
 /* The board keeps its 950x640 proportions at every size, shrinking OR

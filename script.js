@@ -26,9 +26,15 @@ const messageEl = document.querySelector('#message');
 const hintsToggle = document.querySelector('#hints-toggle');
 const pipCountEl = document.querySelector('#pip-count');
 const playOnlineButton = document.querySelector('#play-online-button');
+const preJoinAreaEl = document.querySelector('#pre-join-area');
+const roomCodeInput = document.querySelector('#room-code-input');
+const joinRoomButton = document.querySelector('#join-room-button');
 const roomStatusEl = document.querySelector('#room-status');
 const roomInfoEl = document.querySelector('#room-info');
 const copyLinkButton = document.querySelector('#copy-link-button');
+const qrToggleButton = document.querySelector('#qr-toggle-button');
+const qrPanelEl = document.querySelector('#qr-panel');
+const qrCodeEl = document.querySelector('#qr-code');
 const celebrationEl = document.querySelector('#celebration');
 const confettiLayer = document.querySelector('#confetti-layer');
 const celebrationMessageEl = document.querySelector('#celebration-message');
@@ -422,6 +428,10 @@ hintsToggle.addEventListener('change', () => {
 let onlineRoom = null;
 let onlineColor = null;
 let currentRoomCode = null;
+/* Which room the QR panel currently holds a rendered code for - regenerate
+   only when that stops matching currentRoomCode, rather than on every
+   toggle-open. */
+let qrRenderedForRoom = null;
 
 /* The single gate for "is it this tab's turn to act": both "it's the other
    seat's turn" and "this tab is a spectator" reduce to the same check,
@@ -500,7 +510,7 @@ function handleRoomUpdate(room, color) {
 
 function startOnline(roomCode) {
   currentRoomCode = roomCode;
-  playOnlineButton.hidden = true;
+  preJoinAreaEl.hidden = true;
   roomStatusEl.hidden = false;
   onlineRoom = joinRoom(roomCode, { onRoom: handleRoomUpdate });
 }
@@ -511,10 +521,48 @@ playOnlineButton.addEventListener('click', () => {
   startOnline(roomCode);
 });
 
+/* Beyond pasting a full invite link (still fully supported - see the
+   roomFromUrl bootstrap below), a room code alone is meant to be typeable:
+   sync.js's alphabet was chosen to be easy to read aloud or type into a
+   second device. This is that path's UI. */
+function joinWithCode() {
+  const code = roomCodeInput.value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(code)) {
+    showMessage('Enter a 6-character room code.');
+    return;
+  }
+  location.hash = `room=${code}`;
+  startOnline(code);
+}
+
+joinRoomButton.addEventListener('click', joinWithCode);
+roomCodeInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    joinWithCode();
+  }
+});
+
 copyLinkButton.addEventListener('click', () => {
   navigator.clipboard.writeText(location.href).then(() => showMessage('Link copied.'));
 });
 
+/* Renders lazily (first open, or a room change) rather than on every room
+   update, since the QR encoding itself doesn't depend on anything but the
+   URL, which only changes when currentRoomCode does. */
+qrToggleButton.addEventListener('click', () => {
+  qrPanelEl.hidden = !qrPanelEl.hidden;
+  if (!qrPanelEl.hidden && qrRenderedForRoom !== currentRoomCode) {
+    const qr = qrcode(0, 'M');
+    qr.addData(location.href);
+    qr.make();
+    qrCodeEl.innerHTML = qr.createSvgTag(4, 8);
+    qrRenderedForRoom = currentRoomCode;
+  }
+});
+
+/* Pasting a full invite link (e.g. .../index.html#room=ABCDEF) straight
+   into the address bar still works exactly as before - join-by-code and
+   the QR code above are additional ways in, not replacements for this. */
 const roomFromUrl = location.hash.match(/room=([A-Z0-9]{6})/i);
 if (roomFromUrl) {
   startOnline(roomFromUrl[1].toUpperCase());
