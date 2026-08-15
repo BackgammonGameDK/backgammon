@@ -52,6 +52,11 @@ const offContainers = {
   black: document.querySelector('.off[data-owner="black"] .off-checkers'),
 };
 
+const offCountEls = {
+  white: document.querySelector('.off-count[data-owner="white"]'),
+  black: document.querySelector('.off-count[data-owner="black"]'),
+};
+
 let state = createInitialState();
 let selectedFrom = null;
 let hintsEnabled = false;
@@ -178,6 +183,14 @@ function renderCheckers() {
   [...free.white, ...free.black].forEach((checker) => checker.remove());
 }
 
+/* The off tray clips rather than scrolls once its checkers stop fitting
+   (see .off in style.css), so this badge is the only place the true
+   count is always readable. */
+function renderOffCounts() {
+  offCountEls.white.textContent = state.off.white > 0 ? state.off.white : '';
+  offCountEls.black.textContent = state.off.black > 0 ? state.off.black : '';
+}
+
 function createDie(die, usable) {
   const element = document.createElement('div');
   element.className = 'die';
@@ -283,6 +296,7 @@ function renderSelection() {
 
 function render() {
   renderCheckers();
+  renderOffCounts();
   renderDice();
   renderStatus();
   renderSelection();

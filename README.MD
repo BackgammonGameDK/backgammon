@@ -49,11 +49,13 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    moves and database rules only restrict writing to a room you already know
    the code for, not to whose turn it is.
 3. UX/bug findings from a manual playtest (2026-08-15), highest-severity
-   first. The top two are fixed: mobile Restart no longer overlaps the turn
+   first. Three are fixed: mobile Restart no longer overlaps the turn
    indicator (`.status-row` now clears the fixed button's hit area on
-   narrow/short screens, `style.css`), and clicking a different own-color
+   narrow/short screens, `style.css`), clicking a different own-color
    checker now switches the selection instead of being misread as a move
-   attempt (`script.js`'s click handler). Still not fixed:
+   attempt (`script.js`'s click handler), and the bear-off tray no longer
+   scrolls — it clips past 15 checkers and shows a count badge instead
+   (`.off-count`, `style.css`/`script.js`). Still not fixed:
    - **Rejected clicks are silent.** Bar priority, no legal destinations,
      wrong color, dice not yet rolled — none of these show a message,
      unlike the existing "No legal move for N — skipped" text. `showMessage`
@@ -70,9 +72,6 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      (Restart, Hints, Play Online, room code, Join, Roll) are in the
      accessible tree; points and checkers are plain unlabeled `div`s with
      no role or `tabindex`, so a keyboard-only player can roll but not move.
-   - **Bear-off tray scrolls** — 15 checkers don't fit its fixed height, so
-     the pile has to be scrolled to see fully; a count badge would read
-     better than a scrollbar.
    - **Latent:** `animateMove` (`script.js`) clears its FLIP transform via
      `requestAnimationFrame` plus a `transitionend` listener registered
      `{once: true}`; neither fires in a backgrounded/hidden tab, which is

@@ -472,7 +472,8 @@ body {
   width: var(--tray-width);
   flex-shrink: 0;
   max-height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
+  position: relative;
   background: #2e1a0e;
   display: flex;
   align-items: center;
@@ -485,6 +486,37 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 4px;
+}
+
+/* 15 checkers of one color don't fit the tray's fixed height, so past a
+   point the pile is clipped (see .off's overflow: hidden) rather than
+   scrolled - this badge is the actual source of truth for the count.
+   Fixed px like the rest of the small UI chrome (.pip, .die, etc.), not a
+   % of the tray - font-size can't be expressed as a fraction of an
+   element's own box the way width can. Light background so it stays
+   legible over a pile of either color. Empty (and hidden) at 0, matching
+   the #message/#game-over :empty idiom. */
+.off-count {
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  transform: translateX(-50%);
+  z-index: 2;
+  min-width: 16px;
+  padding: 1px 3px;
+  border-radius: 999px;
+  background: #f5f5f0;
+  border: 1px solid #333;
+  color: #222;
+  font-size: 10px;
+  font-weight: bold;
+  text-align: center;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.off-count:empty {
+  display: none;
 }
 
 .point {
