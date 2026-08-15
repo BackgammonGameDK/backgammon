@@ -16,6 +16,8 @@ python3 -m http.server 8000
 
 then open `http://127.0.0.1:8000/index.html`. A plain `file://` open can fail to load `style.css`, or serve a stale cached copy of a script you just edited, in some sandboxed browser tooling — prefer serving it locally when verifying changes, and see the Tests section below for how `tests.html` works around `file://` caching specifically. Don't commit the server process or any server-related files — it's a throwaway dev aid, not part of the app.
 
+**`index.html`'s local script tags (`rules.js`, `sync.js`, `script.js`, `firebase-config.js`) carry a `?v=N` query string.** GitHub Pages caches static assets and there's no way to set custom cache headers there, so without this a returning visitor's browser can keep running an old cached script indefinitely after a deploy — silently mixing old and new files, which produced a real, confusing bug during Stage D (an old cached `sync.js` whose `claimSeat` still returned a color string instead of mutating the room object, while every other file was current). **Bump `N` on all four tags whenever any of those files change, before deploying** — nothing else will remind you, and a forgotten bump is invisible until someone with a stale cache hits it.
+
 Online play needs the Firebase SDK to actually reach the network — verifying it end-to-end means either two real tabs/devices pointed at the same room code, or working at the `rules.js`/`sync.js` level directly (see Tests).
 
 ## Architecture
