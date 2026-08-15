@@ -10,12 +10,19 @@
   --checker-in-point: 52.5%;
   --checker-in-tray: 86%;
   /* Vertical space the header (title through Roll/messages) takes up above
-     the board. Measured, not guessed - re-measure if the header gains or
-     loses a row, or the board will stop fitting the window exactly. Caps
-     the board's height on any window short enough to need it; on a tall
-     enough window this has no visible effect, since min() below still
-     picks 950px regardless. */
-  --chrome: 380px;
+     the board: 335px measured on a window tall enough that the board isn't
+     itself height-constrained, plus a few px of slack. Re-measure the same
+     way if the header gains or loses a row, or this stops being accurate.
+
+     Caps the board's height on any window short enough to need it. Full
+     950x640 needs roughly --chrome + 640px of height (about 975px here) -
+     below that, which is most non-maximized laptop windows, the board is
+     genuinely smaller than 950x640, not just on small/mobile screens. That
+     first attempt at this comment claimed otherwise; it was wrong - the
+     board always shrinking on unmaximized windows is exactly what fixes a
+     desktop window not being able to show the board and Roll/Restart
+     together at once. */
+  --chrome: 340px;
 }
 
 * {
@@ -317,9 +324,11 @@ body {
 
    The height term applies everywhere, not just small screens - a desktop
    browser window that isn't maximized needs it just as much as a phone
-   does, and on a window tall enough that it never binds, min() simply
-   picks 950px, so a normal-sized desktop window looks exactly as it did
-   before this term existed. */
+   does. Full size needs roughly --chrome + 640px of viewport height
+   (currently about 980px); below that, which is most non-maximized
+   laptop windows, the board is genuinely smaller than 950x640 now, not
+   only on small/mobile screens - that's the fix for a desktop window not
+   being able to show the board and Roll/Restart together at once. */
 .board {
   width: 100%;
   max-width: min(950px, calc((100dvh - var(--chrome)) * 950 / 640));
