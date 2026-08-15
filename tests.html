@@ -31,7 +31,7 @@
        will happily re-run the previous version of rules.js after you have
        edited it - showing stale passes. The timestamp forces a fresh fetch
        every run. async = false keeps them executing in order. */
-    ['rules.js', 'tests.js'].forEach((src) => {
+    ['rules.js', 'sync.js', 'tests.js'].forEach((src) => {
       const script = document.createElement('script');
       script.src = `${src}?v=${Date.now()}`;
       script.async = false;

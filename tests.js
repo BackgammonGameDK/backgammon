@@ -1,20 +1,23 @@
-/* Tests for rules.js.
+/* Tests for rules.js and sync.js.
  *
  * Open tests.html in a browser to run them. No framework and no build step -
- * the whole runner is the ~20 lines below, matching the project's no-tooling
- * constraint. rules.js never touches the DOM, so everything here is a plain
- * function call on a plain object.
+ * the whole runner is the ~40 lines below, matching the project's no-tooling
+ * constraint. rules.js never touches the DOM, so most of this is a plain
+ * function call on a plain object; the sync.js tests do touch localStorage
+ * and BroadcastChannel; and go via a fresh random room code each time so
+ * runs never collide with each other.
+ *
+ * test() only registers a case - they all run at the end, in order, via
+ * run(). That's what lets a test be async: sync.js's cross-client delivery
+ * genuinely happens on a later tick (BroadcastChannel doesn't deliver
+ * synchronously), so a test for it has to await something, and every test
+ * needs to finish before the results can be reported.
  */
 
-const results = [];
+const registeredTests = [];
 
 function test(name, fn) {
-  try {
-    fn();
-    results.push({ name, passed: true });
-  } catch (error) {
-    results.push({ name, passed: false, message: error.message });
-  }
+  registeredTests.push({ name, fn });
 }
 
 function assert(condition, message) {
@@ -29,6 +32,25 @@ function assertEqual(actual, expected, message) {
   if (a !== e) {
     throw new Error(`${message || 'not equal'} - expected ${e}, got ${a}`);
   }
+}
+
+/* Polls rather than waiting a fixed guess, so tests are both fast in the
+   common case and not flaky under a slow first run. */
+function waitFor(conditionFn, timeoutMs = 500) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function poll() {
+      if (conditionFn()) {
+        resolve();
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error('timed out waiting for condition'));
+        return;
+      }
+      setTimeout(poll, 5);
+    })();
+  });
 }
 
 /* ---- helpers for building focused board positions ---- */
@@ -290,23 +312,119 @@ test('no checker is ever lost across a sequence of moves', () => {
   assertEqual(totalCheckers(result.state, 'black'), 15, 'black still has 15');
 });
 
-/* ---- report ---- */
+/* ---- sync.js: room joining and state propagation ----
+ *
+ * Simulates two (or three) tabs from within one test page: each joinRoom
+ * call gets its own BroadcastChannel instance, which is exactly what a real
+ * second tab would have, and gets a fake clientId via the third argument
+ * (real callers derive theirs from sessionStorage, which is genuinely
+ * per-tab and can't be faked from a single page - see sync.js). A fresh
+ * random room code per test keeps runs from colliding with each other or
+ * with a real game in progress.
+ */
 
-const passed = results.filter((r) => r.passed).length;
-const failed = results.length - passed;
+function freshRoomCode() {
+  return 'T' + Math.random().toString(36).slice(2, 5).toUpperCase();
+}
 
-window.__testResults = { passed, failed, total: results.length, results };
+test('the first client to join an empty room is seated white', () => {
+  const a = joinRoom(freshRoomCode(), { onRoom: () => {} }, { clientId: 'c1' });
+  assertEqual(a.color, 'white');
+  a.leave();
+});
 
-const output = document.querySelector('#results');
-output.innerHTML =
-  `<p class="${failed ? 'fail' : 'pass'}"><strong>${passed}/${results.length} passed</strong>` +
-  (failed ? ` &mdash; ${failed} failed` : '') +
-  '</p>' +
-  results
-    .map(
-      (r) =>
-        `<div class="${r.passed ? 'pass' : 'fail'}">${r.passed ? '✓' : '✗'} ${r.name}` +
-        (r.passed ? '' : `<br><span class="msg">${r.message}</span>`) +
-        '</div>'
-    )
-    .join('');
+test('a second, different client is seated black', () => {
+  const code = freshRoomCode();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2' });
+  assertEqual(a.color, 'white');
+  assertEqual(b.color, 'black');
+  a.leave();
+  b.leave();
+});
+
+test('a third client becomes a spectator once both seats are taken', () => {
+  const code = freshRoomCode();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2' });
+  const c = joinRoom(code, { onRoom: () => {} }, { clientId: 'c3' });
+  assertEqual(c.color, 'spectator');
+  a.leave();
+  b.leave();
+  c.leave();
+});
+
+test('rejoining with the same client id reclaims the same seat', () => {
+  const code = freshRoomCode();
+  const a1 = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  a1.leave();
+  const a2 = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  assertEqual(a2.color, 'white', 'same id reclaims white rather than falling through to black');
+  a2.leave();
+});
+
+test('a state sent by one client is delivered to another', async () => {
+  const code = freshRoomCode();
+  let received = null;
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  const b = joinRoom(code, { onRoom: (room) => { received = room; } }, { clientId: 'c2' });
+
+  a.sendState(withRoll(createInitialState(), [4, 2]));
+  await waitFor(() => received && received.seq >= 1);
+
+  assertEqual(received.state.dice.map((d) => d.value), [4, 2], 'the roll reached the other client');
+  a.leave();
+  b.leave();
+});
+
+test('a client joining after moves have been made sees the current state, not the start', async () => {
+  const code = freshRoomCode();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  /* withRoll materializes whatever array it's given as-is; the doubles ->
+     four-dice expansion happens in rollValues, not withRoll, so a mocked
+     random is needed to actually get four dice here rather than two. */
+  a.sendState(withRoll(createInitialState(), rollValues(() => 0.99)));
+
+  let received = null;
+  const b = joinRoom(code, { onRoom: (room) => { received = room; } }, { clientId: 'c2' });
+  await waitFor(() => received !== null);
+
+  assertEqual(received.state.dice.length, 4, 'late joiner sees the doubles already on the board');
+  a.leave();
+  b.leave();
+});
+
+/* ---- run everything and report ---- */
+
+async function run() {
+  const results = [];
+  for (const { name, fn } of registeredTests) {
+    try {
+      await fn();
+      results.push({ name, passed: true });
+    } catch (error) {
+      results.push({ name, passed: false, message: error.message });
+    }
+  }
+
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.length - passed;
+
+  window.__testResults = { passed, failed, total: results.length, results };
+
+  const output = document.querySelector('#results');
+  output.innerHTML =
+    `<p class="${failed ? 'fail' : 'pass'}"><strong>${passed}/${results.length} passed</strong>` +
+    (failed ? ` &mdash; ${failed} failed` : '') +
+    '</p>' +
+    results
+      .map(
+        (r) =>
+          `<div class="${r.passed ? 'pass' : 'fail'}">${r.passed ? '✓' : '✗'} ${r.name}` +
+          (r.passed ? '' : `<br><span class="msg">${r.message}</span>`) +
+          '</div>'
+      )
+      .join('');
+}
+
+run();

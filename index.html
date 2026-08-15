@@ -15,6 +15,13 @@
     <div id="turn-indicator">White's turn</div>
     <label id="hints-toggle-label"><input type="checkbox" id="hints-toggle"> Hints</label>
     <div id="pip-count" hidden></div>
+    <div class="online-area">
+      <button id="play-online-button">Play Online</button>
+      <div id="room-status" hidden>
+        <span id="room-info"></span>
+        <button id="copy-link-button">Copy link</button>
+      </div>
+    </div>
     <div class="dice" id="dice"></div>
     <button id="roll-button">Roll</button>
     <div id="message"></div>
@@ -81,6 +88,7 @@
   </div>
 
   <script src="rules.js"></script>
+  <script src="sync.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

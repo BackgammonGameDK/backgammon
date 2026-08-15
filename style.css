@@ -156,6 +156,38 @@ body {
   color: #fff;
 }
 
+.online-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+#play-online-button,
+#copy-link-button {
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #ccc;
+  background: transparent;
+  border: 1px solid #666;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#play-online-button:hover,
+#copy-link-button:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+#room-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #ccc;
+}
+
 /* The board keeps its 950x640 proportions at every size, shrinking to fit
    the width it's given. Everything inside is sized in % of the board, so
    this one number drives the whole scale.

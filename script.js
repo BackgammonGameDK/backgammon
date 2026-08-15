@@ -6,8 +6,14 @@
  *
  * `state` is the single source of truth - the DOM is derived from it, never
  * read for game logic. `selectedFrom` and `hintsEnabled` are the only other
- * state, and both are local UI concerns that a second player would never
- * need to see.
+ * local state; `onlineRoom`/`onlineColor` (see the Online play section
+ * below) are local too, in the sense that they describe this tab's
+ * connection, not the shared game.
+ *
+ * Every state change - a move, a roll, ending a turn, a restart - goes
+ * through commitState() rather than assigning `state` directly, so that
+ * hot-seat play and online play are the same code path with one branch:
+ * apply it locally, or hand it to sync.js to broadcast.
  */
 
 const board = document.querySelector('.board');
@@ -19,6 +25,10 @@ const turnIndicator = document.querySelector('#turn-indicator');
 const messageEl = document.querySelector('#message');
 const hintsToggle = document.querySelector('#hints-toggle');
 const pipCountEl = document.querySelector('#pip-count');
+const playOnlineButton = document.querySelector('#play-online-button');
+const roomStatusEl = document.querySelector('#room-status');
+const roomInfoEl = document.querySelector('#room-info');
+const copyLinkButton = document.querySelector('#copy-link-button');
 
 /* White re-enters on points 19-24 (top row) and Black on 1-6 (bottom row),
    so each colour waits on the bar nearest where it will come back in. */
@@ -236,24 +246,26 @@ function showMessage(text) {
 
 /* A die is only given up once no checker can use it, and the turn only ends
    once every remaining die is unusable - so a die that looks dead can come
-   back to life after a move changes the board. Re-evaluated after every move
-   rather than forfeited once and for all. */
-function advanceTurn() {
-  if (availableDice(state).length === 0) {
-    state = endTurn(state);
-    render();
-    return;
+   back to life after a move changes the board. Re-evaluated after every
+   move rather than forfeited once and for all.
+
+   Returns the state to actually commit, rather than mutating global state
+   itself - it needs to run exactly once, on whichever client just made the
+   move, before that result is broadcast. Running it again on a state that
+   already went through it (as a receiving client would see) would flip the
+   turn a second time, since by then the dice are already empty. */
+function resolveTurn(next) {
+  if (availableDice(next).length === 0) {
+    return endTurn(next);
   }
 
-  if (!hasAnyLegalMove(state, state.currentPlayer)) {
-    const values = availableDice(state).map((die) => die.value).join(', ');
+  if (!hasAnyLegalMove(next, next.currentPlayer)) {
+    const values = availableDice(next).map((die) => die.value).join(', ');
     showMessage(`No legal move for ${values} — skipped.`);
-    state = endTurn(state);
-    render();
-    return;
+    return endTurn(next);
   }
 
-  render();
+  return next;
 }
 
 function attemptMove(from, to, targetElement) {
@@ -264,15 +276,8 @@ function attemptMove(from, to, targetElement) {
     return;
   }
 
-  state = result.state;
   selectedFrom = null;
-
-  if (state.winner) {
-    render();
-    return;
-  }
-
-  advanceTurn();
+  commitState(result.state.winner ? result.state : resolveTurn(result.state));
 }
 
 function canSelect(from) {
@@ -283,7 +288,7 @@ function canSelect(from) {
 }
 
 board.addEventListener('click', (event) => {
-  if (state.winner) {
+  if (state.winner || blockedOnline()) {
     return;
   }
 
@@ -320,19 +325,20 @@ board.addEventListener('click', (event) => {
 });
 
 rollButton.addEventListener('click', () => {
-  if (state.dice.length > 0 || state.winner) {
+  if (state.dice.length > 0 || state.winner || blockedOnline()) {
     return;
   }
-  state = withRoll(state, rollValues());
   selectedFrom = null;
-  advanceTurn();
+  commitState(resolveTurn(withRoll(state, rollValues())));
 });
 
 restartButton.addEventListener('click', () => {
-  state = createInitialState();
+  if (onlineRoom && onlineColor === 'spectator') {
+    return;
+  }
   selectedFrom = null;
   messageEl.textContent = '';
-  render();
+  commitState(createInitialState());
 });
 
 hintsToggle.addEventListener('change', () => {
@@ -340,5 +346,92 @@ hintsToggle.addEventListener('change', () => {
   pipCountEl.hidden = !hintsEnabled;
   renderSelection();
 });
+
+/* ---- Online play (Stage C) --------------------------------------------
+ * See sync.js for the room/transport model. In hot-seat mode (no room
+ * joined) commitState is the only thing this section touches, and it just
+ * falls through to a plain local assignment - so offline play makes zero
+ * localStorage or BroadcastChannel calls, deliberately: a game with no
+ * room code in the URL should behave exactly as it did before any of this
+ * existed.
+ */
+
+let onlineRoom = null;
+let onlineColor = null;
+let currentRoomCode = null;
+
+/* The single gate for "is it this tab's turn to act": both "it's the other
+   seat's turn" and "this tab is a spectator" reduce to the same check,
+   since state.currentPlayer is never 'spectator'. */
+function blockedOnline() {
+  return Boolean(onlineRoom) && onlineColor !== state.currentPlayer;
+}
+
+/* Every local change to `state` goes through here rather than assigning the
+   variable directly, so hot-seat and online play are the same call site
+   with one branch: apply it locally, or hand it to sync.js to broadcast
+   (which loops back to this tab too, via handleRoomUpdate). */
+function commitState(newState) {
+  if (onlineRoom) {
+    onlineRoom.sendState(newState);
+  } else {
+    state = newState;
+    render();
+  }
+}
+
+function renderRoomStatus(room) {
+  if (!onlineColor) {
+    return;
+  }
+  const other = onlineColor === 'white' ? 'black' : 'white';
+  const otherPresent = onlineColor !== 'spectator' && Boolean(room.seats[other]);
+  const you = onlineColor === 'spectator' ? 'Spectating' : `You are ${onlineColor === 'white' ? 'White' : 'Black'}`;
+  const waiting = onlineColor !== 'spectator' && !otherPresent ? ' — waiting for opponent…' : '';
+  roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${waiting}`;
+}
+
+/* Fires once on join with whatever is already in the room (possibly empty),
+   and again every time it changes - whether this client changed it or
+   another one did. If the room has no state yet, this client created it:
+   seed the starting position and broadcast it, rather than leaving the
+   room empty until someone moves. */
+function handleRoomUpdate(room, color) {
+  onlineColor = color;
+  renderRoomStatus(room);
+
+  if (room.state === null) {
+    if (color === 'white') {
+      onlineRoom.sendState(createInitialState());
+    }
+    return;
+  }
+
+  state = room.state;
+  selectedFrom = null;
+  render();
+}
+
+function startOnline(roomCode) {
+  currentRoomCode = roomCode;
+  playOnlineButton.hidden = true;
+  roomStatusEl.hidden = false;
+  onlineRoom = joinRoom(roomCode, { onRoom: handleRoomUpdate });
+}
+
+playOnlineButton.addEventListener('click', () => {
+  const roomCode = randomRoomCode();
+  location.hash = `room=${roomCode}`;
+  startOnline(roomCode);
+});
+
+copyLinkButton.addEventListener('click', () => {
+  navigator.clipboard.writeText(location.href).then(() => showMessage('Link copied.'));
+});
+
+const roomFromUrl = location.hash.match(/room=([A-Z0-9]{4})/i);
+if (roomFromUrl) {
+  startOnline(roomFromUrl[1].toUpperCase());
+}
 
 render();
