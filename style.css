@@ -139,6 +139,10 @@ body {
    dismissed); this is the one-off moment on top of it. Click anywhere on
    the backdrop, or Play Again, to dismiss - script.js only shows it once
    per win (see celebrationShownFor), so it won't reappear on its own. */
+#celebration[hidden] {
+  display: none;
+}
+
 #celebration {
   position: fixed;
   inset: 0;
@@ -285,6 +289,16 @@ body {
 #copy-link-button:hover {
   background: #3a3a3a;
   color: #fff;
+}
+
+/* Overrides the hidden attribute's UA-stylesheet display:none: an author
+   rule setting `display` on the same element always wins the cascade over
+   that (author beats user-agent regardless of selector specificity), so
+   `display: flex` below would otherwise make the hidden attribute purely
+   cosmetic - present on the element, but with no actual effect on whether
+   it's shown. Same fix, same reason, on #celebration further down. */
+#room-status[hidden] {
+  display: none;
 }
 
 #room-status {
