@@ -9,16 +9,25 @@
      have to stay tappable. */
   --checker-in-point: 52.5%;
   --checker-in-tray: 86%;
-  /* Vertical space taken above AND below the board: header (title through
-     Roll/messages) measured at 311px, plus the board's own 12px bottom
-     margin, which the height formula below has no other way to account
-     for (it only computes where the board's top edge is; a margin past
-     its bottom edge isn't part of that). Together, 323px. Skipping the
-     bottom margin here once already caused a real, if small, overflow
-     past the viewport - re-measure the same way (a window tall enough
-     that the board isn't itself height-constrained, then .board's top
-     offset) plus re-add the current bottom margin if either changes. */
-  --chrome: 323px;
+  /* Every bit of vertical space besides the board's own height, added up
+     so the height formula below can subtract all of it, not just some of
+     it - it only ever computes where the board's top edge lands, so
+     anything past its bottom edge (its own margin, body's own padding)
+     has to be added in by hand or the page silently overflows the
+     viewport by exactly however much was left out. Got this wrong twice
+     in a row before enumerating it properly instead of re-guessing:
+
+       311px  body padding-top + header + board's margin-top (measured:
+              a window tall enough the board isn't height-constrained,
+              then .board's top offset - this one figure covers all three
+              at once, so don't also add them separately)
+      + 12px  board's margin-bottom
+      + 20px  body's padding-bottom
+      = 343px
+
+     Re-measure the 311px the same way, and re-total, if the header
+     changes or any of these margins/padding do. */
+  --chrome: 343px;
 }
 
 * {
