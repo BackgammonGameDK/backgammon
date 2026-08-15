@@ -321,6 +321,14 @@ body {
   color: #ccc;
 }
 
+/* Flagged when the other seat's presence (sync.js) drops while its seat is
+   still claimed - i.e. the opponent was here and disconnected, not simply
+   hasn't joined yet. Amber rather than red: it's informational, not an
+   error state the player needs to act on. */
+.room-status--warning #room-info {
+  color: #e0a030;
+}
+
 /* The board keeps its 950x640 proportions at every size, shrinking OR
    growing to fit whichever runs out first: the 1300px design ceiling, the
    width it's given, or the available height converted to a width via the

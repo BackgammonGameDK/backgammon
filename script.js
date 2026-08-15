@@ -443,15 +443,33 @@ function commitState(newState) {
   }
 }
 
+/* Seats never empty once claimed (see sync.js's claimSeat) - a reload is
+   meant to reclaim the same seat, not free it - so seat occupancy alone
+   can't tell "opponent hasn't shown up yet" apart from "opponent was here
+   and left". room.presence (also sync.js) can: it's only set while the
+   other tab is actually connected, cleared automatically by Firebase the
+   moment it disconnects. Distinguishing the two states is what a
+   returning player actually wants to know before they keep waiting on a
+   move that isn't coming. */
 function renderRoomStatus(room) {
   if (!onlineColor) {
     return;
   }
   const other = onlineColor === 'white' ? 'black' : 'white';
-  const otherPresent = onlineColor !== 'spectator' && Boolean(room.seats[other]);
+  const seatTaken = onlineColor !== 'spectator' && Boolean(room.seats[other]);
+  const otherPresent = seatTaken && Boolean(room.presence && room.presence[other]);
   const you = onlineColor === 'spectator' ? 'Spectating' : `You are ${onlineColor === 'white' ? 'White' : 'Black'}`;
-  const waiting = onlineColor !== 'spectator' && !otherPresent ? ' — waiting for opponent…' : '';
-  roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${waiting}`;
+
+  let status = '';
+  if (onlineColor !== 'spectator') {
+    if (!seatTaken) {
+      status = ' — waiting for opponent…';
+    } else if (!otherPresent) {
+      status = ' — opponent disconnected';
+    }
+  }
+  roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${status}`;
+  roomStatusEl.classList.toggle('room-status--warning', status === ' — opponent disconnected');
 }
 
 /* Fires once on join with whatever is already in the room (possibly empty),

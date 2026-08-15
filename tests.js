@@ -315,12 +315,22 @@ test('no checker is ever lost across a sequence of moves', () => {
 /* ---- sync.js: room joining and state propagation ----
  *
  * sync.js talks to Firebase through a tiny slice of its API - ref(path),
- * .transaction(), .on('value'), .off('value'), .set() - injected via
- * joinRoom's `database` option. These tests exercise that same slice
- * against a small in-memory fake rather than a real Firebase project, so
- * the suite stays fast and has no network dependency; it deliberately does
- * NOT re-test Firebase itself (that's Firebase's job), only how sync.js
- * uses it - seat assignment, initial-state seeding, propagation.
+ * .transaction(), .on('value'), .off('value'), .set(), .update(),
+ * .remove(), and the .info/connected + .onDisconnect() presence idiom -
+ * injected via joinRoom's `database` option. These tests exercise that
+ * same slice against a small in-memory fake rather than a real Firebase
+ * project, so the suite stays fast and has no network dependency; it
+ * deliberately does NOT re-test Firebase itself (that's Firebase's job),
+ * only how sync.js uses it - seat assignment, initial-state seeding,
+ * propagation, presence.
+ *
+ * The fake can't reproduce a *real* disconnect (that's detected server-side
+ * by the actual Firebase backend, nothing a client-side fake can trigger);
+ * what it can and does reproduce is the contract sync.js relies on -
+ * onDisconnect() registers an action against a path, and _simulateDisconnect
+ * runs whatever's registered there, standing in for the server noticing the
+ * connection drop. That's enough to test sync.js's side of the idiom
+ * without testing Firebase's delivery of it.
  *
  * The fake resolves every operation via setTimeout(0) rather than
  * synchronously, on purpose: it's what makes the concurrent-join test
@@ -370,17 +380,87 @@ function stripNulls(value) {
   return value;
 }
 
+/* The store is a real nested tree (not a flat map keyed by path string),
+   because presence (rooms/<code>/presence/<color>) has to show up when
+   something reads the room as a whole (rooms/<code>) - exactly like real
+   Firebase, where a write anywhere in the tree is visible to a 'value'
+   listener on any ancestor path. A flat map keyed by the literal path
+   string a caller happened to use can't do that: a write to
+   'rooms/ABC/presence/white' and a read of 'rooms/ABC' would be two
+   unrelated entries, and the room's own listener would never see presence
+   arrive - which is exactly the shape of bug this fake exists to catch. */
 function createFakeDatabase() {
-  const store = {};
+  const root = {};
   const listeners = {};
+  const disconnectActions = {};
 
-  function notify(path) {
-    const cbs = listeners[path];
-    if (!cbs) {
-      return;
+  function segments(path) {
+    return path.split('/').filter(Boolean);
+  }
+
+  function getNode(path) {
+    let node = root;
+    for (const key of segments(path)) {
+      if (node == null || typeof node !== 'object') {
+        return undefined;
+      }
+      node = node[key];
     }
-    const value = path in store ? store[path] : null;
-    cbs.forEach((cb) => setTimeout(() => cb({ val: () => value }), 0));
+    return node;
+  }
+
+  /* Writes `value` at `path`, replacing whatever subtree was there, and
+     prunes any ancestor left holding an empty object - matching Firebase,
+     where an empty object isn't a value that exists. Does not notify;
+     callers do that once, after every key of a multi-key write has landed,
+     so a single set()/update() call produces exactly one 'value' event per
+     listener, same as real Firebase. */
+  function writeNode(path, value) {
+    const parts = segments(path);
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const key = parts[i];
+      if (typeof node[key] !== 'object' || node[key] === null) {
+        node[key] = {};
+      }
+      node = node[key];
+    }
+    const leaf = parts[parts.length - 1];
+    const cleaned = stripNulls(value);
+    if (cleaned === undefined) {
+      delete node[leaf];
+    } else {
+      node[leaf] = cleaned;
+    }
+    for (let depth = parts.length - 1; depth >= 1; depth--) {
+      let parent = root;
+      for (let i = 0; i < depth - 1; i++) {
+        parent = parent[parts[i]];
+      }
+      const key = parts[depth - 1];
+      const child = parent ? parent[key] : undefined;
+      if (child && typeof child === 'object' && Object.keys(child).length === 0) {
+        delete parent[key];
+      } else {
+        break;
+      }
+    }
+  }
+
+  /* Fires every listener on `path` itself and on every ancestor of it -
+     each gets the current value at *its own* path, not at the path that
+     actually changed, same as a real Firebase 'value' listener. */
+  function notify(path) {
+    const parts = segments(path);
+    for (let depth = parts.length; depth >= 0; depth--) {
+      const ancestorPath = parts.slice(0, depth).join('/');
+      const cbs = listeners[ancestorPath];
+      if (!cbs) {
+        continue;
+      }
+      const value = getNode(ancestorPath);
+      cbs.forEach((cb) => setTimeout(() => cb({ val: () => (value === undefined ? null : value) }), 0));
+    }
   }
 
   return {
@@ -389,11 +469,12 @@ function createFakeDatabase() {
         transaction(updateFn) {
           return new Promise((resolve) => {
             setTimeout(() => {
-              const current = path in store ? store[path] : null;
-              const next = stripNulls(updateFn(current)) ?? null;
-              store[path] = next;
+              const current = getNode(path) ?? null;
+              const next = updateFn(current);
+              writeNode(path, next);
               notify(path);
-              resolve({ committed: true, snapshot: { val: () => next } });
+              const committed = getNode(path) ?? null;
+              resolve({ committed: true, snapshot: { val: () => committed } });
             }, 0);
           });
         },
@@ -403,7 +484,19 @@ function createFakeDatabase() {
           }
           listeners[path] = listeners[path] || new Set();
           listeners[path].add(cb);
-          notify(path);
+          /* .info/connected has no writer of its own in this fake - it's
+             always "connected", resolved on a microtask (asynchronous, like
+             every real Firebase call here, but without piling an extra
+             setTimeout macrotask onto every single client join - with two
+             or three joins per sync test across the whole suite, those add
+             up enough to occasionally push a slower test past its waitFor
+             budget). */
+          if (path === '.info/connected') {
+            Promise.resolve().then(() => cb({ val: () => true }));
+            return;
+          }
+          const value = getNode(path);
+          setTimeout(() => cb({ val: () => (value === undefined ? null : value) }), 0);
         },
         off(event, cb) {
           if (listeners[path]) {
@@ -411,11 +504,57 @@ function createFakeDatabase() {
           }
         },
         set(value) {
-          store[path] = stripNulls(value) ?? null;
+          writeNode(path, value);
           notify(path);
           return Promise.resolve();
         },
+        /* Merges only the given top-level keys into whatever's already at
+           `path`, leaving sibling keys (like a presence entry written by a
+           different client) untouched - unlike set(), which would replace
+           the whole node. */
+        update(patch) {
+          Object.keys(patch).forEach((key) => {
+            writeNode(path + '/' + key, patch[key]);
+          });
+          notify(path);
+          return Promise.resolve();
+        },
+        remove() {
+          writeNode(path, undefined);
+          notify(path);
+          return Promise.resolve();
+        },
+        /* Registers an action for _simulateDisconnect to run later, standing
+           in for the server-side registration a real onDisconnect() makes.
+           Resolved on a microtask (sync.js chains a .then() off of it) -
+           see the .info/connected comment above for why not setTimeout. */
+        onDisconnect() {
+          return {
+            remove() {
+              return Promise.resolve().then(() => {
+                disconnectActions[path] = { type: 'remove' };
+              });
+            },
+            set(value) {
+              return Promise.resolve().then(() => {
+                disconnectActions[path] = { type: 'set', value };
+              });
+            },
+          };
+        },
       };
+    },
+    /* Test-only: runs whatever onDisconnect() action is registered at
+       `path`, standing in for the real Firebase server noticing this
+       client's connection drop. */
+    _simulateDisconnect(path) {
+      const action = disconnectActions[path];
+      if (!action) {
+        return;
+      }
+      writeNode(path, action.type === 'remove' ? undefined : action.value);
+      delete disconnectActions[path];
+      notify(path);
     },
   };
 }
@@ -517,6 +656,62 @@ test('a client joining after moves have been made sees the current state, not th
   await waitFor(() => bRoom !== null);
 
   assertEqual(bRoom.state.dice.length, 4, 'late joiner sees the doubles already on the board');
+});
+
+/* ---- sync.js: presence ---- */
+
+test('a seated client is marked present in the room', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room && room.presence && room.presence.white === true);
+});
+
+test('a spectator gets no presence entry of their own', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+
+  let cRoom = null;
+  const c = joinRoom(code, { onRoom: (r) => { cRoom = r; } }, { clientId: 'c3', database: db });
+  await waitFor(() => c.color === 'spectator' && cRoom && cRoom.presence);
+
+  assert(!('spectator' in cRoom.presence), 'no presence key should exist for a spectator');
+});
+
+test('a client\'s presence is cleared once it disconnects', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
+  let bRoom = null;
+  joinRoom(code, { onRoom: (r) => { bRoom = r; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom && bRoom.presence && bRoom.presence.white === true);
+
+  db._simulateDisconnect(`rooms/${code}/presence/white`);
+  await waitFor(() => !bRoom.presence || !bRoom.presence.white);
+});
+
+test('sending a state update does not clobber the other seat\'s presence', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
+  let bRoom = null;
+  const b = joinRoom(code, { onRoom: (r) => { bRoom = r; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom && bRoom.presence && bRoom.presence.white === true && bRoom.presence.black === true);
+
+  bRoom = null;
+  a.sendState(withRoll(createInitialState(), [3, 4]));
+  await waitFor(() => bRoom && bRoom.seq >= 1);
+
+  assertEqual(bRoom.presence.black, true, "black's own presence should survive white sending a state update");
 });
 
 /* ---- serializeState / deserializeState: Firebase's null-stripping ----

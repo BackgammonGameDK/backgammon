@@ -34,9 +34,11 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    (a serializable state object, and rendering derived from it) is done, the
    room/seat layer is done, and it's now backed by a real Firebase Realtime
    Database — two separate devices, anywhere, can share a live game. See
-   Architecture below for how. Remaining:
-   - Polish: disconnect handling, presence, a friendlier "share this link"
-     flow.
+   Architecture below for how. Presence and disconnect handling are done too
+   (a seated player now sees "opponent disconnected" rather than silently
+   waiting on a move that isn't coming — see Architecture). Remaining:
+   - A friendlier "share this link" flow beyond the existing room code +
+     copy-link button.
 
    Decided up front: sync whole state snapshots rather than replaying moves
    (a dropped message can't silently desync the boards); rooms via a code in
@@ -76,6 +78,19 @@ one. Every local state change goes through one `commitState()` call in
 are the same code path with one branch — and a game with no room code in the
 URL makes zero calls to Firebase.
 
+Presence is layered on the same room record, at `/rooms/<code>/presence/<color>`:
+a seated client writes `true` there while connected, using Firebase's
+`.info/connected` + `onDisconnect()` idiom so the *server* clears it the
+moment that client's connection actually drops — a closed tab, a lost
+network, a crash — not something the client has to do itself on the way
+out. This is what lets the other player's status line distinguish "hasn't
+joined yet" (seat unclaimed) from "was here and left" (seat claimed,
+presence gone), which seat occupancy alone can't do, since a seat is never
+freed once claimed. `sendState` writes with `update()` rather than `set()`
+for the same reason seats and presence live in the same record but are
+written independently: a full-record `set()` would clobber whichever one
+this client didn't just change.
+
 `database.rules.json` restricts read/write to a specific `/rooms/<code>` path,
 and only if you already know the code — there's no listing, no accounts,
 matching the friend-level trust decided up front. `firebase-config.js` holds
@@ -114,3 +129,5 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+Online play now tracks presence (see Architecture): the room status line tells "waiting for opponent" (seat unclaimed) apart from "opponent disconnected" (seat claimed, but that player's connection just dropped) — previously indistinguishable, since a seat is never freed once claimed. Verified against the live Firebase project with two real tabs, including a genuine tab-close disconnect.

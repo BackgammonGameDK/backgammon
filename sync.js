@@ -8,7 +8,7 @@
  * is what Firebase's onValue naturally does too.
  *
  * The room record at /rooms/<code> is exactly what it was in Stage C:
- * { seats: {white, black}, state, seq }. database.rules.json restricts
+ * { seats: {white, black}, state, seq, presence }. database.rules.json restricts
  * read/write to a specific room path, and only to someone who already
  * knows its code - there is no listing, no accounts, matching the
  * friend-level trust model decided up front.
@@ -89,6 +89,45 @@ function claimSeat(room, clientId) {
     return room;
   }
   return room;
+}
+
+/* Presence: written to /rooms/<code>/presence/<color> (a plain `true` while
+   connected) so the other seat can tell "opponent hasn't shown up yet"
+   (seat claimed, no presence entry) apart from "opponent was here and
+   left" (seat claimed, presence entry gone) - claimSeat never frees a seat
+   once taken (a reload is meant to reclaim it, see clientIdFor above), so
+   seat occupancy alone can't distinguish those two cases.
+
+   Built on Firebase's .info/connected + onDisconnect() idiom: onDisconnect
+   registers an action *on the server*, to run when the server itself
+   notices this connection drop - not something the client executes, so it
+   fires on a closed tab, a lost network, or a crash, not only a clean page
+   unload. It's re-armed every time .info/connected flips to true rather
+   than once, because a previous registration doesn't survive the
+   disconnect that triggered it; a client that drops and reconnects has to
+   re-register or a second real disconnect would go unnoticed.
+
+   A spectator gets no presence entry - there's no seat for the other
+   player to be waiting on. Returns a detach function for leave(). */
+function attachPresence(db, roomCode, color) {
+  if (color === 'spectator') {
+    return () => {};
+  }
+  const presenceRef = db.ref('rooms/' + roomCode + '/presence/' + color);
+  const connectedRef = db.ref('.info/connected');
+  const handler = (snapshot) => {
+    if (snapshot.val() !== true) {
+      return;
+    }
+    presenceRef.onDisconnect().remove().then(() => {
+      presenceRef.set(true);
+    });
+  };
+  connectedRef.on('value', handler);
+  return () => {
+    connectedRef.off('value', handler);
+    presenceRef.remove();
+  };
 }
 
 function seatFor(seats, clientId) {
@@ -179,9 +218,11 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, database }
   let color = 'spectator';
   let latestRoom = emptyRoom();
   let valueHandler = null;
+  let detachPresence = () => {};
 
   roomRef.transaction((current) => claimSeat(current || emptyRoom(), clientId)).then((result) => {
     color = seatFor(result.snapshot.val().seats, clientId);
+    detachPresence = attachPresence(db, roomCode, color);
 
     /* latestRoom is kept in Firebase's native (serialized) shape - it's only
        ever used below for its seats/seq, which round-trip untouched, so
@@ -204,17 +245,26 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, database }
      than waiting on a round trip to read it back - so two sendState calls
      made in quick succession (which shouldn't normally happen, since
      script.js only calls this once per committed move) still get distinct
-     seq numbers instead of racing to read the same stale value. */
+     seq numbers instead of racing to read the same stale value.
+
+     Written with roomRef.update() rather than .set(): a plain .set() at
+     the room path would replace the whole record, including presence -
+     which changes on its own timeline (a disconnect can flip it between
+     this client's last-seen snapshot and its next move) and isn't this
+     client's to overwrite. update() patches only the keys given, leaving
+     the other seat's presence entry alone regardless of when it last
+     changed. */
   function sendState(state) {
-    const next = { ...latestRoom, state: serializeState(state), seq: (latestRoom.seq || 0) + 1 };
-    latestRoom = next;
-    roomRef.set(next);
+    const next = { seats: latestRoom.seats, state: serializeState(state), seq: (latestRoom.seq || 0) + 1 };
+    latestRoom = { ...latestRoom, ...next };
+    roomRef.update(next);
   }
 
   function leave() {
     if (valueHandler) {
       roomRef.off('value', valueHandler);
     }
+    detachPresence();
   }
 
   return {
