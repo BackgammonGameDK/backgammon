@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -26,11 +26,14 @@
         </div>
       </div>
       <div id="room-status" hidden>
-        <span id="room-info"></span>
-        <button id="copy-link-button">Copy link</button>
-        <button id="qr-toggle-button">QR</button>
-        <div id="qr-panel" hidden>
-          <div id="qr-code"></div>
+        <button id="room-chip" hidden></button>
+        <div id="room-details">
+          <span id="room-info"></span>
+          <button id="copy-link-button">Copy link</button>
+          <button id="qr-toggle-button">QR</button>
+          <div id="qr-panel" hidden>
+            <div id="qr-code"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -111,10 +114,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=22"></script>
-  <script src="qrcode-generator.js?v=22"></script>
-  <script src="rules.js?v=22"></script>
-  <script src="sync.js?v=22"></script>
-  <script src="script.js?v=22"></script>
+  <script src="firebase-config.js?v=25"></script>
+  <script src="qrcode-generator.js?v=25"></script>
+  <script src="rules.js?v=25"></script>
+  <script src="sync.js?v=25"></script>
+  <script src="script.js?v=25"></script>
 </body>
 </html>

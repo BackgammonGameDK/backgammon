@@ -327,6 +327,7 @@ body {
    #pre-join-area/#qr-panel above/below. */
 #room-status[hidden],
 #pre-join-area[hidden],
+#room-details[hidden],
 #qr-panel[hidden] {
   display: none;
 }
@@ -373,9 +374,15 @@ body {
 }
 
 /* Anchors #qr-panel below, so it can float without adding to the dice
-   area's height - see #qr-panel. */
+   area's height - see #qr-panel. Also the anchor for #room-details when
+   collapsed (see .room-status--collapsed), for the same reason. */
 #room-status {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+#room-details {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -389,6 +396,62 @@ body {
    error state the player needs to act on. */
 .room-status--warning #room-info {
   color: #e0a030;
+}
+
+/* Once there's nothing to actively report (see renderRoomStatus in
+   script.js - collapsed exactly when there's no "waiting"/"disconnected"
+   status to show), the Room code/Copy link/QR row isn't useful anymore
+   and just eats space during play - collapse it to a small code chip,
+   with the full row available again as a click-to-open popover. */
+#room-chip {
+  display: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #ccc;
+  background: transparent;
+  border: 1px solid #666;
+  border-radius: 999px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+#room-chip:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+.room-status--collapsed #room-chip {
+  display: inline-block;
+}
+
+/* Floats the same way #qr-panel does (see below) and for the same
+   reason - a popped-open #room-details must not add to the dice area's
+   height, since --chrome assumes its current row structure. Centered on
+   #room-chip (not right: 0, like #qr-panel) and stacked in a column
+   capped to the viewport width, rather than staying a single wide row
+   like the non-popover layout: unlike #qr-panel's fixed small size, this
+   holds a full sentence plus two buttons, wide enough to overflow off a
+   narrow screen if it only ever grew from one fixed edge. (flex-wrap
+   instead of a column here looked right on paper but an auto-width wrapped
+   flex row sizes to its content's min-content width, not the available
+   space, and came out oddly narrow even on desktop - column direction with
+   width: max-content doesn't have that problem.) */
+.room-status--collapsed #room-details:not([hidden]) {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  padding: 10px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  flex-direction: column;
+  gap: 8px;
+  background: #2b2b2b;
+  border: 1px solid #555;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 15;
 }
 
 /* Floats above the board instead of displacing it when opened, same reason

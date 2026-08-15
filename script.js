@@ -30,6 +30,8 @@ const preJoinAreaEl = document.querySelector('#pre-join-area');
 const roomCodeInput = document.querySelector('#room-code-input');
 const joinRoomButton = document.querySelector('#join-room-button');
 const roomStatusEl = document.querySelector('#room-status');
+const roomChipEl = document.querySelector('#room-chip');
+const roomDetailsEl = document.querySelector('#room-details');
 const roomInfoEl = document.querySelector('#room-info');
 const copyLinkButton = document.querySelector('#copy-link-button');
 const qrToggleButton = document.querySelector('#qr-toggle-button');
@@ -73,6 +75,10 @@ const MAX_VISIBLE_OFF = 4;
 let state = createInitialState();
 let selectedFrom = null;
 let hintsEnabled = false;
+/* Whether the room-code chip's popover (#room-details) has been opened
+   while collapsed - see renderRoomStatus. Irrelevant, and ignored, while
+   the row isn't collapsed at all. */
+let roomDetailsOpen = false;
 /* Which winning color the celebration overlay has already been shown for,
    distinct from state.winner itself: dismissing the overlay only hides it,
    it doesn't clear state.winner, so without this the very next render()
@@ -565,6 +571,15 @@ function renderRoomStatus(room) {
   roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${status}`;
   roomStatusEl.classList.toggle('room-status--warning', status === ' — opponent disconnected');
 
+  /* Nothing left to actively report (opponent present and connected, or
+     spectating) - the Copy link/QR row isn't needed anymore, so collapse
+     it to just the room code, restorable via roomChipEl's click handler. */
+  const collapsed = status === '';
+  roomStatusEl.classList.toggle('room-status--collapsed', collapsed);
+  roomChipEl.hidden = !collapsed;
+  roomChipEl.textContent = currentRoomCode;
+  roomDetailsEl.hidden = collapsed && !roomDetailsOpen;
+
   const restartBlocked = onlineColor === 'spectator' || !bothSeatsClaimed(room);
   restartButton.disabled = restartBlocked;
   playAgainButton.disabled = restartBlocked;
@@ -640,6 +655,11 @@ roomCodeInput.addEventListener('keydown', (event) => {
 
 copyLinkButton.addEventListener('click', () => {
   navigator.clipboard.writeText(location.href).then(() => showMessage('Link copied.'));
+});
+
+roomChipEl.addEventListener('click', () => {
+  roomDetailsOpen = !roomDetailsOpen;
+  renderRoomStatus(latestRoom);
 });
 
 /* Renders lazily (first open, or a room change) rather than on every room
