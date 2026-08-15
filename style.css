@@ -714,12 +714,29 @@ button,
   :root {
     /* Same 12 (board margin-bottom) + 20 (body padding-bottom) = 32px tail
        as the base value; only the before-the-board portion changes, to
-       284px, since collapsing .status-row into one row saves two stacked
-       rows' worth of height (but not two full 8px gaps - flex-wrap still
-       needs its own row gap). Measured directly (see the base --chrome
-       comment for the method); re-measure if .status-row's content
+       253.5px, since collapsing .status-row into one row saves two
+       stacked rows' worth of height (but not two full 8px gaps -
+       flex-wrap still needs its own row gap), and h1 below is trimmed
+       down from the browser default title margins it used to carry
+       unstyled. Measured against the pre-join-area row (Play Online +
+       room code + Join) rather than the room-status chip that replaces
+       it once online - the pre-join row is the taller of the two, so
+       it's the one --chrome actually has to fit. Measured directly (see
+       the base --chrome comment for the method); re-measure if
+       .status-row's or .online-area's content, or h1's own rule below,
        changes. */
-    --chrome: 316px;
+    --chrome: 286px;
+  }
+
+  /* h1 was never explicitly styled, so it carried the browser default
+     title margins (~21px above and below, on a 32px font) into the
+     chrome budget above unnoticed - the fixed #restart-button, right
+     next to it, already sits close to the very top (top: 16px) with none
+     of that. Trimmed to nearly match: margin-top low enough that h1
+     starts almost level with Restart, a small margin-bottom instead of
+     none so the title doesn't crowd the controls below it. */
+  h1 {
+    margin: 0 0 12px;
   }
 
   .status-row {
