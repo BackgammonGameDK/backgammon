@@ -515,6 +515,15 @@ body {
   pointer-events: none;
 }
 
+/* Matches .checker.black's fill/border so the badge reads as "black's
+   count" at a glance rather than defaulting to the same light styling
+   as the white tray's badge. */
+.off-count[data-owner="black"] {
+  background: #222;
+  border: 1px solid #666;
+  color: #eee;
+}
+
 .off-count:empty {
   display: none;
 }
