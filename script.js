@@ -395,12 +395,17 @@ function renderRoomStatus(room) {
    and again every time it changes - whether this client changed it or
    another one did. If the room has no state yet, this client created it:
    seed the starting position and broadcast it, rather than leaving the
-   room empty until someone moves. */
+   room empty until someone moves.
+
+   `== null` rather than `=== null`: Firebase never actually stores a null
+   value - a key written as null is simply absent from what a listener
+   receives back, so a freshly-created room's `state` arrives as undefined,
+   not null. `== null` matches both. */
 function handleRoomUpdate(room, color) {
   onlineColor = color;
   renderRoomStatus(room);
 
-  if (room.state === null) {
+  if (room.state == null) {
     if (color === 'white') {
       onlineRoom.sendState(createInitialState());
     }
@@ -429,7 +434,7 @@ copyLinkButton.addEventListener('click', () => {
   navigator.clipboard.writeText(location.href).then(() => showMessage('Link copied.'));
 });
 
-const roomFromUrl = location.hash.match(/room=([A-Z0-9]{4})/i);
+const roomFromUrl = location.hash.match(/room=([A-Z0-9]{6})/i);
 if (roomFromUrl) {
   startOnline(roomFromUrl[1].toUpperCase());
 }

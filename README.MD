@@ -8,8 +8,10 @@ web development and working with an AI coding agent (Claude Code).
 - CSS — styling and visual design
 - JavaScript — game logic and interactivity
 
-No frameworks, no build tools, no server — runs entirely in the browser, offline, 
-by opening `index.html`.
+No frameworks, no build tools, no server of our own — runs entirely in the browser
+by opening `index.html`. Hot-seat play is fully offline, zero network calls. Online
+play (see Future Improvements) talks to a Firebase Realtime Database, so it needs
+an internet connection, but nothing about hosting or building the game itself does.
 
 ## Build Plan
 1. **Static board** — render the board and starting checker positions
@@ -29,20 +31,18 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
 
 1. AI opponent
 2. Multiplayer synchronisation, planned in stages. The prerequisite refactor
-   (a serializable state object, and rendering derived from it) is done —
-   see Architecture below. A room/seat layer with a local-only transport
-   (`sync.js`) is also done: two tabs on the same machine can share a game
-   via a room code in the URL, with no backend at all. Remaining:
-   - Swap that transport for Firebase Realtime Database, so two separate
-     devices sync over the internet rather than two tabs on one machine.
+   (a serializable state object, and rendering derived from it) is done, the
+   room/seat layer is done, and it's now backed by a real Firebase Realtime
+   Database — two separate devices, anywhere, can share a live game. See
+   Architecture below for how. Remaining:
    - Polish: disconnect handling, presence, a friendlier "share this link"
      flow.
 
    Decided up front: sync whole state snapshots rather than replaying moves
    (a dropped message can't silently desync the boards); rooms via a code in
    the URL, no accounts; friend-level trust, so each client validates its own
-   moves and (once there's a real backend) database rules only restrict
-   writing to your own turn.
+   moves and database rules only restrict writing to a room you already know
+   the code for, not to whose turn it is.
 
 ## Architecture
 
@@ -57,26 +57,46 @@ Rendering reconciles the existing checker elements rather than rebuilding the
 board, because the FLIP move animation measures the same element before and
 after — a rebuild would silently kill it.
 
-`sync.js` is the multiplayer transport, written to a `joinRoom(...)` interface
-that a Firebase-backed version can drop in behind without `script.js` needing
-to change. For now it's backed by `localStorage` (a shared "room" record —
-seats and the current game state) and `BroadcastChannel` (the live push
-notification when it changes), which only works between tabs of the same
-browser but mirrors the shape Firebase's Realtime Database will actually take:
-a value you can read immediately on subscribing, plus live updates after that.
-Every local state change goes through one `commitState()` call in `script.js`
-rather than assigning `state` directly, so hot-seat and online play are the
-same code path with one branch — and a game with no room code in the URL makes
-zero `localStorage`/`BroadcastChannel` calls.
+`sync.js` is the multiplayer transport, backed by Firebase Realtime Database.
+The room record at `/rooms/<code>` (seats and the current game state) is exactly
+what an earlier local-only rehearsal used, synced via `localStorage` and
+`BroadcastChannel` between two tabs before any backend existed — that stage's
+job was proving the design (rooms, seats, turn handoff) cheaply, and once it
+worked, swapping in Firebase changed only `sync.js`'s internals. `script.js` was
+already written against `joinRoom(...)`'s callback timing (it never fires
+synchronously) because that's what `BroadcastChannel` naturally forced, and
+that happens to be exactly what Firebase's `onValue` does too — a value you can
+read immediately on subscribing, then live updates after — so no changes were
+needed there. Seat-claiming uses a Firebase transaction rather than a plain
+read-then-write, because two real devices can now request a room at the same
+instant in a way two tabs you open yourself never do — a transaction is what
+guarantees they still land on different seats rather than racing onto the same
+one. Every local state change goes through one `commitState()` call in
+`script.js` rather than assigning `state` directly, so hot-seat and online play
+are the same code path with one branch — and a game with no room code in the
+URL makes zero calls to Firebase.
+
+`database.rules.json` restricts read/write to a specific `/rooms/<code>` path,
+and only if you already know the code — there's no listing, no accounts,
+matching the friend-level trust decided up front. `firebase-config.js` holds
+the project's public client config (safe to commit — it identifies which
+project to talk to, it isn't a secret; the rules are what actually gate access).
 
 ## Tests
 
 Open `tests.html` in a browser. No framework, no build step, no dependencies —
 the runner is about forty lines at the top of `tests.js`, extended to support
-async tests since verifying `sync.js`'s cross-tab delivery genuinely requires
-waiting for a message to arrive. The sync tests simulate two or three "tabs"
-within one page — one `joinRoom` call per simulated tab, each getting its own
-`BroadcastChannel`, exactly like a real second tab would.
+async tests since verifying propagation genuinely requires waiting for an
+update to arrive. The sync tests run against a small in-memory fake of the
+handful of Firebase calls `sync.js` actually makes (`ref`/`transaction`/`on`/
+`off`/`set`), injected via `joinRoom`'s `database` option — real callers never
+pass it, defaulting instead to an actual `firebase.database()`. This tests
+*our* logic (seat assignment, initial-state seeding, propagation) without the
+suite depending on a live Firebase project or a network call; testing whether
+Firebase itself works isn't our job. The fake resolves everything
+asynchronously on purpose, which is what makes the concurrent-join test
+meaningful: it's checking the same guarantee a Firebase transaction gives two
+genuinely simultaneous real devices.
 
 The page loads its scripts with a cache-busting timestamp, because browsers
 cache aggressively over `file://` and will otherwise re-run the previous
@@ -89,6 +109,6 @@ Since then: Restart was separated from Roll to prevent mis-clicks, a "Hints" tog
 
 The game state was then extracted out of the DOM into `rules.js` (see Architecture), with a test suite covering the rules — groundwork for multiplayer. Restart is now a state reset rather than a page reload.
 
-A "Play Online" button now lets two tabs on the same machine share a live game via a room code in the URL (`sync.js`) — first to join is White, second is Black, further joins spectate. Moves, rolls, and restarts made in one tab appear in the other automatically. This works with no backend at all; the only thing left for real cross-device multiplayer is swapping the local transport for Firebase.
+A "Play Online" button lets players share a live game via a room code in the URL (`sync.js`) — first to join is White, second is Black, further joins spectate. Moves, rolls, and restarts made by one player appear for the other automatically. First built and proven between two tabs on one machine with no backend at all, then backed by a real Firebase Realtime Database — the transport swap only touched `sync.js`, nothing else. Two separate devices, anywhere, can now play the same game.
 
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.

@@ -314,84 +314,274 @@ test('no checker is ever lost across a sequence of moves', () => {
 
 /* ---- sync.js: room joining and state propagation ----
  *
- * Simulates two (or three) tabs from within one test page: each joinRoom
- * call gets its own BroadcastChannel instance, which is exactly what a real
- * second tab would have, and gets a fake clientId via the third argument
- * (real callers derive theirs from sessionStorage, which is genuinely
- * per-tab and can't be faked from a single page - see sync.js). A fresh
- * random room code per test keeps runs from colliding with each other or
- * with a real game in progress.
+ * sync.js talks to Firebase through a tiny slice of its API - ref(path),
+ * .transaction(), .on('value'), .off('value'), .set() - injected via
+ * joinRoom's `database` option. These tests exercise that same slice
+ * against a small in-memory fake rather than a real Firebase project, so
+ * the suite stays fast and has no network dependency; it deliberately does
+ * NOT re-test Firebase itself (that's Firebase's job), only how sync.js
+ * uses it - seat assignment, initial-state seeding, propagation.
+ *
+ * The fake resolves every operation via setTimeout(0) rather than
+ * synchronously, on purpose: it's what makes the concurrent-join test
+ * below meaningful. Two transactions scheduled back to back on the same
+ * tick still run in the order they were scheduled, each seeing the
+ * previous one's committed result - the same guarantee a real Firebase
+ * transaction gives two genuinely simultaneous devices, which is the
+ * entire reason seat-claiming moved from Stage C's plain read-then-write
+ * to a transaction in the first place.
+ *
+ * Multiple joinRoom calls sharing one fake database instance simulate
+ * multiple real clients talking to the same Firebase project; each still
+ * gets its own fake clientId via the third argument, standing in for
+ * sessionStorage (genuinely per-tab, so it can't be faked from one page).
+ * A fresh random room code per test keeps runs from colliding.
  */
 
 function freshRoomCode() {
   return 'T' + Math.random().toString(36).slice(2, 5).toUpperCase();
 }
 
-test('the first client to join an empty room is seated white', () => {
-  const a = joinRoom(freshRoomCode(), { onRoom: () => {} }, { clientId: 'c1' });
-  assertEqual(a.color, 'white');
-  a.leave();
+/* Firebase never actually stores a null value, or an empty object/array -
+   writing one just makes that key absent on the next read. Confirmed
+   directly against the live database (see the sync.js commit for the
+   curl transcripts), not assumed from documentation, because it's exactly
+   the kind of thing a fake that only mirrors what you'd naively expect
+   would fail to catch. Every write here goes through this so the fake
+   actually exercises sync.js's serializeState/deserializeState, not just
+   a JS object round trip that JSON.stringify would have handled for free. */
+function stripNulls(value) {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value.length ? value : undefined;
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    Object.keys(value).forEach((key) => {
+      const cleaned = stripNulls(value[key]);
+      if (cleaned !== undefined) {
+        out[key] = cleaned;
+      }
+    });
+    return Object.keys(out).length ? out : undefined;
+  }
+  return value;
+}
+
+function createFakeDatabase() {
+  const store = {};
+  const listeners = {};
+
+  function notify(path) {
+    const cbs = listeners[path];
+    if (!cbs) {
+      return;
+    }
+    const value = path in store ? store[path] : null;
+    cbs.forEach((cb) => setTimeout(() => cb({ val: () => value }), 0));
+  }
+
+  return {
+    ref(path) {
+      return {
+        transaction(updateFn) {
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              const current = path in store ? store[path] : null;
+              const next = stripNulls(updateFn(current)) ?? null;
+              store[path] = next;
+              notify(path);
+              resolve({ committed: true, snapshot: { val: () => next } });
+            }, 0);
+          });
+        },
+        on(event, cb) {
+          if (event !== 'value') {
+            return;
+          }
+          listeners[path] = listeners[path] || new Set();
+          listeners[path].add(cb);
+          notify(path);
+        },
+        off(event, cb) {
+          if (listeners[path]) {
+            listeners[path].delete(cb);
+          }
+        },
+        set(value) {
+          store[path] = stripNulls(value) ?? null;
+          notify(path);
+          return Promise.resolve();
+        },
+      };
+    },
+  };
+}
+
+test('the first client to join an empty room is seated white', async () => {
+  const db = createFakeDatabase();
+  let color = null;
+  const a = joinRoom(freshRoomCode(), { onRoom: () => { color = a.color; } }, { clientId: 'c1', database: db });
+  await waitFor(() => color !== null);
+  assertEqual(color, 'white');
 });
 
-test('a second, different client is seated black', () => {
+test('a second, different client is seated black', async () => {
   const code = freshRoomCode();
-  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
-  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2' });
-  assertEqual(a.color, 'white');
-  assertEqual(b.color, 'black');
-  a.leave();
-  b.leave();
+  const db = createFakeDatabase();
+  let aColor = null;
+  let bColor = null;
+  const a = joinRoom(code, { onRoom: () => { aColor = a.color; } }, { clientId: 'c1', database: db });
+  await waitFor(() => aColor !== null);
+  const b = joinRoom(code, { onRoom: () => { bColor = b.color; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bColor !== null);
+  assertEqual(aColor, 'white');
+  assertEqual(bColor, 'black');
 });
 
-test('a third client becomes a spectator once both seats are taken', () => {
+test('a third client becomes a spectator once both seats are taken', async () => {
   const code = freshRoomCode();
-  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
-  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2' });
-  const c = joinRoom(code, { onRoom: () => {} }, { clientId: 'c3' });
-  assertEqual(c.color, 'spectator');
-  a.leave();
-  b.leave();
-  c.leave();
+  const db = createFakeDatabase();
+  let cColor = null;
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+  const c = joinRoom(code, { onRoom: () => { cColor = c.color; } }, { clientId: 'c3', database: db });
+  await waitFor(() => cColor !== null);
+  assertEqual(cColor, 'spectator');
 });
 
-test('rejoining with the same client id reclaims the same seat', () => {
+test('rejoining with the same client id reclaims the same seat', async () => {
   const code = freshRoomCode();
-  const a1 = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  const db = createFakeDatabase();
+  const a1 = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a1.color !== 'spectator');
   a1.leave();
-  const a2 = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
-  assertEqual(a2.color, 'white', 'same id reclaims white rather than falling through to black');
-  a2.leave();
+
+  let color = null;
+  const a2 = joinRoom(code, { onRoom: () => { color = a2.color; } }, { clientId: 'c1', database: db });
+  await waitFor(() => color !== null);
+  assertEqual(color, 'white', 'same id reclaims white rather than falling through to black');
+});
+
+/* This is the concurrency guarantee that motivated switching seat-claiming
+   from Stage C's plain read-then-write to a Firebase transaction: two
+   clients whose joins race - both starting before either has committed -
+   must still end up on different seats, never both landing on white. */
+test('two clients joining at the same instant still get distinct seats', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let aColor = null;
+  let bColor = null;
+  const a = joinRoom(code, { onRoom: () => { aColor = a.color; } }, { clientId: 'c1', database: db });
+  const b = joinRoom(code, { onRoom: () => { bColor = b.color; } }, { clientId: 'c2', database: db });
+  await waitFor(() => aColor !== null && bColor !== null);
+  assert(new Set([aColor, bColor]).size === 2, `expected distinct seats, got ${aColor} and ${bColor}`);
 });
 
 test('a state sent by one client is delivered to another', async () => {
   const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
   let received = null;
-  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
-  const b = joinRoom(code, { onRoom: (room) => { received = room; } }, { clientId: 'c2' });
+  const b = joinRoom(code, { onRoom: (room) => { received = room; } }, { clientId: 'c2', database: db });
+  await waitFor(() => received !== null);
+  received = null;
 
   a.sendState(withRoll(createInitialState(), [4, 2]));
   await waitFor(() => received && received.seq >= 1);
 
   assertEqual(received.state.dice.map((d) => d.value), [4, 2], 'the roll reached the other client');
-  a.leave();
-  b.leave();
 });
 
 test('a client joining after moves have been made sees the current state, not the start', async () => {
   const code = freshRoomCode();
-  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1' });
+  const db = createFakeDatabase();
+  let aRoom = null;
+  const a = joinRoom(code, { onRoom: (room) => { aRoom = room; } }, { clientId: 'c1', database: db });
+  await waitFor(() => aRoom !== null);
+
   /* withRoll materializes whatever array it's given as-is; the doubles ->
      four-dice expansion happens in rollValues, not withRoll, so a mocked
      random is needed to actually get four dice here rather than two. */
   a.sendState(withRoll(createInitialState(), rollValues(() => 0.99)));
+  await waitFor(() => aRoom.state && aRoom.state.dice.length === 4);
 
-  let received = null;
-  const b = joinRoom(code, { onRoom: (room) => { received = room; } }, { clientId: 'c2' });
-  await waitFor(() => received !== null);
+  let bRoom = null;
+  joinRoom(code, { onRoom: (room) => { bRoom = room; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom !== null);
 
-  assertEqual(received.state.dice.length, 4, 'late joiner sees the doubles already on the board');
-  a.leave();
-  b.leave();
+  assertEqual(bRoom.state.dice.length, 4, 'late joiner sees the doubles already on the board');
+});
+
+/* ---- serializeState / deserializeState: Firebase's null-stripping ----
+ *
+ * These exist because two real bugs slipped past every test above: room.state
+ * checked with `=== null` to detect a fresh room, which broke the moment a
+ * real Firebase-backed room came back with `state` merely absent rather than
+ * null; and rules.js's 25-slot points array, being mostly null, doesn't
+ * survive a Firebase round trip as an array at all - confirmed against the
+ * live database, not assumed. Both were invisible to the local-only Stage C
+ * tests and to any fake that just mirrors a plain JS object, which is why
+ * createFakeDatabase now specifically strips nulls/empties (see stripNulls)
+ * rather than only proving sync.js's own logic against a faithful copy of
+ * whatever it wrote.
+ */
+
+test('a fresh room has no state, and deserializeState leaves that as something falsy rather than crashing', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+  assert(room.state == null, 'a fresh room\'s state should read as absent, matching what script.js checks for');
+});
+
+test('an empty dice array survives a full send/receive round trip', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  a.sendState(endTurn(withRoll(createInitialState(), [3, 4])));
+  await waitFor(() => room.state);
+
+  assertEqual(room.state.dice, [], 'dice should round-trip as an empty array, not go missing or throw');
+});
+
+test('a sparse points array (most points empty) survives a full send/receive round trip', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  const sent = createInitialState();
+  a.sendState(sent);
+  await waitFor(() => room.state);
+
+  assertEqual(room.state, sent, 'a full game state should be byte-for-byte identical after the round trip');
+  assertEqual(pipCount(room.state, 'white'), 167, 'and the rules should work on what comes back, not just look equal');
+});
+
+test('an empty board (every checker borne off) survives a full send/receive round trip', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  const emptyBoard = { points: new Array(25).fill(null), bar: { white: 0, black: 0 }, off: { white: 15, black: 15 }, dice: [], currentPlayer: 'white', winner: null };
+  a.sendState(emptyBoard);
+  await waitFor(() => room.state);
+
+  assertEqual(room.state.points, emptyBoard.points, 'an all-null points array should round-trip as all-null, not vanish or shrink');
 });
 
 /* ---- run everything and report ---- */
