@@ -1,192 +1,66 @@
+/* DOM wiring and rendering.
+ *
+ * All game rules and state live in rules.js, which never touches the DOM.
+ * This file's job is the other half: turn clicks into moves, and turn the
+ * resulting state back into checkers on screen.
+ *
+ * `state` is the single source of truth - the DOM is derived from it, never
+ * read for game logic. `selectedFrom` and `hintsEnabled` are the only other
+ * state, and both are local UI concerns that a second player would never
+ * need to see.
+ */
+
 const board = document.querySelector('.board');
-let selectedChecker = null;
-let currentPlayer = 'white';
-let gameOver = false;
+const diceContainer = document.querySelector('#dice');
+const rollButton = document.querySelector('#roll-button');
+const restartButton = document.querySelector('#restart-button');
+const gameOverEl = document.querySelector('#game-over');
+const turnIndicator = document.querySelector('#turn-indicator');
+const messageEl = document.querySelector('#message');
+const hintsToggle = document.querySelector('#hints-toggle');
+const pipCountEl = document.querySelector('#pip-count');
 
-function selectChecker(checker) {
-  if (selectedChecker) {
-    selectedChecker.classList.remove('selected');
-  }
-  selectedChecker = checker;
-  selectedChecker.classList.add('selected');
-  highlightLegalTargets(checker);
-}
+/* White re-enters on points 19-24 (top row) and Black on 1-6 (bottom row),
+   so each colour waits on the bar nearest where it will come back in. */
+const barContainers = {
+  white: document.querySelector('.board-row.top .bar-checkers'),
+  black: document.querySelector('.board-row.bottom .bar-checkers'),
+};
 
-function deselect() {
-  if (selectedChecker) {
-    selectedChecker.classList.remove('selected');
-    selectedChecker = null;
-  }
-  clearLegalTargets();
-}
+const offContainers = {
+  white: document.querySelector('.off[data-owner="white"] .off-checkers'),
+  black: document.querySelector('.off[data-owner="black"] .off-checkers'),
+};
 
-board.addEventListener('click', (event) => {
-  if (gameOver) {
-    return;
-  }
+let state = createInitialState();
+let selectedFrom = null;
+let hintsEnabled = false;
 
-  const checker = event.target.closest('.checker');
-  const point = event.target.closest('.point');
-  const offTray = event.target.closest('.off');
-
-  if (selectedChecker && offTray && offTray.dataset.owner === colorOf(selectedChecker) && isHomeReady(colorOf(selectedChecker))) {
-    attemptBearOff(selectedChecker, offTray);
-    return;
-  }
-
-  if (selectedChecker && point && point !== selectedChecker.parentElement) {
-    attemptMove(selectedChecker, point);
-    return;
-  }
-
-  if (checker) {
-    const barCheckers = getBarCheckers(currentPlayer);
-    const mustClearBarFirst = barCheckers.length > 0 && !isOnBar(checker);
-    if (checker === selectedChecker) {
-      deselect();
-    } else if (
-      checker.classList.contains(currentPlayer) &&
-      diceContainer.children.length > 0 &&
-      !mustClearBarFirst &&
-      getLegalDestinations(checker).length > 0
-    ) {
-      selectChecker(checker);
-    }
-    return;
-  }
-
-  deselect();
-});
-
-function isOnBar(checker) {
-  return checker.parentElement.classList.contains('bar-checkers');
+function pointElement(pointNumber) {
+  return document.querySelector(`.point[data-point="${pointNumber}"]`);
 }
 
 function colorOf(checker) {
   return checker.classList.contains('white') ? 'white' : 'black';
 }
 
-function getBarCheckers(color) {
-  return [...document.querySelectorAll(`.bar-checkers .checker.${color}`)];
-}
-
-function entryPoint(color, dieValue) {
-  return color === 'white' ? 25 - dieValue : dieValue;
-}
-
-function checkersInPlay(color) {
-  return [...document.querySelectorAll(`.point .checker.${color}`)];
-}
-
-function pipsFromOff(color, pointNumber) {
-  return color === 'white' ? pointNumber : 25 - pointNumber;
-}
-
-function pipCount(color) {
-  const inPlay = checkersInPlay(color).reduce(
-    (sum, c) => sum + pipsFromOff(color, Number(c.parentElement.dataset.point)),
-    0
-  );
-  return inPlay + getBarCheckers(color).length * 25;
-}
-
-function isHomeReady(color) {
-  if (getBarCheckers(color).length > 0) {
-    return false;
+/* Which board location a checker element currently sits in, in the terms
+   rules.js uses: a point number, BAR, or null when it's already borne off. */
+function locationOf(checker) {
+  const parent = checker.parentElement;
+  if (parent.classList.contains('bar-checkers')) {
+    return BAR;
   }
-  return checkersInPlay(color).every((checker) => {
-    const n = Number(checker.parentElement.dataset.point);
-    return color === 'white' ? n <= 6 : n >= 19;
-  });
-}
-
-function isFarthestCheckerPips(color, pips) {
-  return !checkersInPlay(color).some((c) => pipsFromOff(color, Number(c.parentElement.dataset.point)) > pips);
-}
-
-function findBearOffDie(checker) {
-  const color = colorOf(checker);
-  const pips = pipsFromOff(color, Number(checker.parentElement.dataset.point));
-
-  const exact = getAvailableDice().find((d) => Number(d.dataset.value) === pips);
-  if (exact) {
-    return exact;
-  }
-
-  if (!isFarthestCheckerPips(color, pips)) {
+  if (parent.classList.contains('off-checkers')) {
     return null;
   }
-  return getAvailableDice().find((d) => Number(d.dataset.value) > pips) || null;
+  return Number(parent.dataset.point);
 }
 
-function canBearOffWithValue(color, value) {
-  if (!isHomeReady(color)) {
-    return false;
-  }
-  return checkersInPlay(color).some((checker) => {
-    const pips = pipsFromOff(color, Number(checker.parentElement.dataset.point));
-    return pips === value || (value > pips && isFarthestCheckerPips(color, pips));
-  });
-}
-
-function getLegalDestinations(checker) {
-  const color = colorOf(checker);
-  const destinations = new Set();
-
-  if (isOnBar(checker)) {
-    getAvailableDice().forEach((die) => {
-      const toPoint = document.querySelector(`.point[data-point="${entryPoint(color, Number(die.dataset.value))}"]`);
-      if (toPoint && isValidMove(checker, checker.parentElement, toPoint).legal) {
-        destinations.add(toPoint);
-      }
-    });
-    return [...destinations];
-  }
-
-  const fromNum = Number(checker.parentElement.dataset.point);
-  getAvailableDice().forEach((die) => {
-    const value = Number(die.dataset.value);
-    const toNum = color === 'white' ? fromNum - value : fromNum + value;
-    const toPoint = document.querySelector(`.point[data-point="${toNum}"]`);
-    if (toPoint && isValidMove(checker, checker.parentElement, toPoint).legal) {
-      destinations.add(toPoint);
-    }
-  });
-
-  if (isHomeReady(color) && findBearOffDie(checker)) {
-    destinations.add(document.querySelector(`.off[data-owner="${color}"]`));
-  }
-
-  return [...destinations];
-}
-
-function isValidMove(checker, fromPoint, toPoint) {
-  const color = colorOf(checker);
-  const opposingColor = color === 'white' ? 'black' : 'white';
-  const toNum = Number(toPoint.dataset.point);
-
-  if (fromPoint.classList.contains('point')) {
-    const fromNum = Number(fromPoint.dataset.point);
-    const movingForward = color === 'white' ? toNum < fromNum : toNum > fromNum;
-    if (!movingForward) {
-      return { legal: false };
-    }
-  }
-
-  const opposingCount = toPoint.querySelectorAll(`.checker.${opposingColor}`).length;
-  if (opposingCount >= 2) {
-    return { legal: false };
-  }
-
-  return {
-    legal: true,
-    hitChecker: opposingCount === 1 ? toPoint.querySelector(`.checker.${opposingColor}`) : null,
-  };
-}
-
-function flashInvalid(point) {
-  point.classList.add('invalid-target');
-  setTimeout(() => point.classList.remove('invalid-target'), 300);
+function createChecker(color) {
+  const checker = document.createElement('div');
+  checker.className = `checker ${color}`;
+  return checker;
 }
 
 function animateMove(checker, moveFn) {
@@ -216,178 +90,139 @@ function animateMove(checker, moveFn) {
   );
 }
 
-function attemptMove(checker, toPoint) {
-  const fromPoint = checker.parentElement;
-  const color = colorOf(checker);
-  const toNum = Number(toPoint.dataset.point);
+/* Every container that can hold checkers, paired with what the state says
+   should be in it. */
+function desiredLayout() {
+  const layout = new Map();
 
-  const die = isOnBar(checker)
-    ? getAvailableDice().find((d) => entryPoint(color, Number(d.dataset.value)) === toNum) || null
-    : findMatchingDie(Math.abs(toNum - Number(fromPoint.dataset.point)));
-
-  const { legal, hitChecker } = isValidMove(checker, fromPoint, toPoint);
-
-  if (!legal || !die) {
-    flashInvalid(toPoint);
-    return;
+  for (let n = 1; n <= 24; n++) {
+    const point = state.points[n];
+    layout.set(pointElement(n), point ? { color: point.color, count: point.count } : { color: null, count: 0 });
   }
 
-  if (hitChecker) {
-    const bar = toPoint.closest('.board-row').querySelector('.bar-checkers');
-    animateMove(hitChecker, () => bar.appendChild(hitChecker));
-  }
+  layout.set(barContainers.white, { color: 'white', count: state.bar.white });
+  layout.set(barContainers.black, { color: 'black', count: state.bar.black });
+  layout.set(offContainers.white, { color: 'white', count: state.off.white });
+  layout.set(offContainers.black, { color: 'black', count: state.off.black });
 
-  animateMove(checker, () => toPoint.appendChild(checker));
-  die.classList.add('played');
-  updatePipCounts();
-  deselect();
-  checkDiceAvailability();
+  return layout;
 }
 
-function attemptBearOff(checker, offTray) {
-  const die = findBearOffDie(checker);
+/* Reconciles the existing checker elements to match the state rather than
+   rebuilding the board. That matters for two reasons: the FLIP animation in
+   animateMove measures the same element before and after, so a rebuild would
+   silently kill it - and reusing elements means only the checkers that
+   actually moved animate, whatever caused the change. A move, a hit, or (in
+   future) a state update arriving from another player all take this path. */
+function renderCheckers() {
+  const layout = desiredLayout();
+  const free = { white: [], black: [] };
+  const keptCounts = new Map();
 
-  if (!die) {
-    flashInvalid(offTray);
-    return;
-  }
+  layout.forEach((want, container) => {
+    let kept = 0;
+    [...container.querySelectorAll('.checker')].forEach((checker) => {
+      const color = colorOf(checker);
+      if (color === want.color && kept < want.count) {
+        kept += 1;
+      } else {
+        free[color].push(checker);
+      }
+    });
+    keptCounts.set(container, kept);
+  });
 
-  animateMove(checker, () => offTray.querySelector('.off-checkers').appendChild(checker));
-  die.classList.add('played');
-  updatePipCounts();
-  deselect();
+  layout.forEach((want, container) => {
+    for (let i = keptCounts.get(container); i < want.count; i++) {
+      const checker = free[want.color].pop();
+      if (checker) {
+        animateMove(checker, () => container.appendChild(checker));
+      } else {
+        container.appendChild(createChecker(want.color));
+      }
+    }
+  });
 
-  if (isGameWon(colorOf(checker))) {
-    endGame(colorOf(checker));
-    return;
-  }
-
-  checkDiceAvailability();
+  /* Anything still unclaimed doesn't exist in this state, so it must leave
+     the DOM. During normal play the pool always empties by itself - each
+     move takes one checker off one container and puts it on another - but
+     rendering an arbitrary state (a restart, or a board arriving from
+     another player) can leave surplus behind, and without this the board
+     would keep stale checkers that the state says are gone. */
+  [...free.white, ...free.black].forEach((checker) => checker.remove());
 }
 
-function isGameWon(color) {
-  return document.querySelectorAll(`.off[data-owner="${color}"] .checker.${color}`).length === 15;
+function createDie(die, usable) {
+  const element = document.createElement('div');
+  element.className = 'die';
+  element.dataset.value = die.value;
+  if (die.played) {
+    element.classList.add('played');
+  } else if (!usable) {
+    element.classList.add('forfeited');
+  }
+  for (let i = 0; i < 9; i++) {
+    element.appendChild(document.createElement('span')).className = 'pip';
+  }
+  return element;
 }
 
-function endGame(color) {
-  gameOver = true;
+function renderDice() {
   diceContainer.innerHTML = '';
-  rollButton.disabled = true;
-  gameOverEl.textContent = `${color === 'white' ? 'White' : 'Black'} wins!`;
+  state.dice.forEach((die) => {
+    diceContainer.appendChild(createDie(die, canUseDie(state, state.currentPlayer, die.value)));
+  });
+  rollButton.disabled = state.dice.length > 0 || Boolean(state.winner);
 }
 
-const diceContainer = document.querySelector('#dice');
-const rollButton = document.querySelector('#roll-button');
-const restartButton = document.querySelector('#restart-button');
-const gameOverEl = document.querySelector('#game-over');
-const turnIndicator = document.querySelector('#turn-indicator');
-const messageEl = document.querySelector('#message');
-const hintsToggle = document.querySelector('#hints-toggle');
-const pipCountEl = document.querySelector('#pip-count');
+function renderStatus() {
+  turnIndicator.textContent = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
+  pipCountEl.textContent = `Pips — White: ${pipCount(state, 'white')} · Black: ${pipCount(state, 'black')}`;
+  gameOverEl.textContent = state.winner ? `${state.winner === 'white' ? 'White' : 'Black'} wins!` : '';
+}
 
-let hintsEnabled = false;
+function clearHighlights() {
+  document.querySelectorAll('.legal-target').forEach((el) => el.classList.remove('legal-target'));
+  document.querySelectorAll('.checker.selected').forEach((el) => el.classList.remove('selected'));
+}
 
-function highlightLegalTargets(checker) {
+/* The selection is a board location, not a particular checker element -
+   checkers are interchangeable, so the top one of the stack stands in for it. */
+function renderSelection() {
+  clearHighlights();
+  if (selectedFrom === null) {
+    return;
+  }
+
+  const container = selectedFrom === BAR ? barContainers[state.currentPlayer] : pointElement(selectedFrom);
+  const checkers = container.querySelectorAll('.checker');
+  if (checkers.length > 0) {
+    checkers[checkers.length - 1].classList.add('selected');
+  }
+
   if (!hintsEnabled) {
     return;
   }
-  getLegalDestinations(checker).forEach((el) => el.classList.add('legal-target'));
-}
 
-function updatePipCounts() {
-  pipCountEl.textContent = `Pips — White: ${pipCount('white')} · Black: ${pipCount('black')}`;
-}
-
-function clearLegalTargets() {
-  document.querySelectorAll('.legal-target').forEach((el) => el.classList.remove('legal-target'));
-}
-
-function rollDie() {
-  return Math.floor(Math.random() * 6) + 1;
-}
-
-function createDie(value) {
-  const die = document.createElement('div');
-  die.className = 'die';
-  die.dataset.value = value;
-  for (let i = 0; i < 9; i++) {
-    die.appendChild(document.createElement('span')).className = 'pip';
-  }
-  return die;
-}
-
-function rollDice() {
-  const first = rollDie();
-  const second = rollDie();
-  const values = first === second ? [first, first, first, first] : [first, second];
-
-  diceContainer.innerHTML = '';
-  values.forEach((value) => diceContainer.appendChild(createDie(value)));
-  rollButton.disabled = true;
-  checkDiceAvailability();
-}
-
-function getAvailableDice() {
-  return [...diceContainer.querySelectorAll('.die:not(.played)')];
-}
-
-function findMatchingDie(distance) {
-  return getAvailableDice().find((die) => Number(die.dataset.value) === distance) || null;
-}
-
-function canUseDie(value) {
-  const barCheckers = getBarCheckers(currentPlayer);
-  if (barCheckers.length > 0) {
-    const toPoint = document.querySelector(`.point[data-point="${entryPoint(currentPlayer, value)}"]`);
-    return isValidMove(barCheckers[0], barCheckers[0].parentElement, toPoint).legal;
-  }
-
-  const hasNormalMove = [...board.querySelectorAll(`.checker.${currentPlayer}`)].some((checker) => {
-    const fromPoint = checker.parentElement;
-    if (!fromPoint.classList.contains('point')) {
-      return false;
-    }
-    const fromNum = Number(fromPoint.dataset.point);
-    const toNum = currentPlayer === 'white' ? fromNum - value : fromNum + value;
-    const toPoint = document.querySelector(`.point[data-point="${toNum}"]`);
-    return toPoint ? isValidMove(checker, fromPoint, toPoint).legal : false;
+  getLegalDestinations(state, state.currentPlayer, selectedFrom).forEach((destination) => {
+    const element =
+      destination === OFF
+        ? document.querySelector(`.off[data-owner="${state.currentPlayer}"]`)
+        : pointElement(destination);
+    element.classList.add('legal-target');
   });
-
-  return hasNormalMove || canBearOffWithValue(currentPlayer, value);
 }
 
-function checkDiceAvailability() {
-  const remaining = getAvailableDice();
-
-  if (remaining.length === 0) {
-    endTurn();
-    return;
-  }
-
-  let anyUsable = false;
-  remaining.forEach((die) => {
-    const usable = canUseDie(Number(die.dataset.value));
-    die.classList.toggle('forfeited', !usable);
-    if (usable) {
-      anyUsable = true;
-    }
-  });
-
-  if (!anyUsable) {
-    showMessage(`No legal move for ${remaining.map((die) => die.dataset.value).join(', ')} — skipped.`);
-    endTurn();
-  }
+function render() {
+  renderCheckers();
+  renderDice();
+  renderStatus();
+  renderSelection();
 }
 
-function endTurn() {
-  currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
-  diceContainer.innerHTML = '';
-  rollButton.disabled = false;
-  updateTurnIndicator();
-}
-
-function updateTurnIndicator() {
-  turnIndicator.textContent = `${currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
+function flashInvalid(element) {
+  element.classList.add('invalid-target');
+  setTimeout(() => element.classList.remove('invalid-target'), 300);
 }
 
 function showMessage(text) {
@@ -399,15 +234,111 @@ function showMessage(text) {
   }, 3000);
 }
 
-rollButton.addEventListener('click', rollDice);
-restartButton.addEventListener('click', () => location.reload());
+/* A die is only given up once no checker can use it, and the turn only ends
+   once every remaining die is unusable - so a die that looks dead can come
+   back to life after a move changes the board. Re-evaluated after every move
+   rather than forfeited once and for all. */
+function advanceTurn() {
+  if (availableDice(state).length === 0) {
+    state = endTurn(state);
+    render();
+    return;
+  }
+
+  if (!hasAnyLegalMove(state, state.currentPlayer)) {
+    const values = availableDice(state).map((die) => die.value).join(', ');
+    showMessage(`No legal move for ${values} — skipped.`);
+    state = endTurn(state);
+    render();
+    return;
+  }
+
+  render();
+}
+
+function attemptMove(from, to, targetElement) {
+  const result = applyMove(state, state.currentPlayer, from, to);
+
+  if (!result.ok) {
+    flashInvalid(targetElement);
+    return;
+  }
+
+  state = result.state;
+  selectedFrom = null;
+
+  if (state.winner) {
+    render();
+    return;
+  }
+
+  advanceTurn();
+}
+
+function canSelect(from) {
+  return (
+    availableDice(state).length > 0 &&
+    getLegalDestinations(state, state.currentPlayer, from).length > 0
+  );
+}
+
+board.addEventListener('click', (event) => {
+  if (state.winner) {
+    return;
+  }
+
+  const checker = event.target.closest('.checker');
+  const point = event.target.closest('.point');
+  const offTray = event.target.closest('.off');
+
+  if (selectedFrom !== null && offTray && offTray.dataset.owner === state.currentPlayer) {
+    attemptMove(selectedFrom, OFF, offTray);
+    return;
+  }
+
+  if (selectedFrom !== null && point && Number(point.dataset.point) !== selectedFrom) {
+    attemptMove(selectedFrom, Number(point.dataset.point), point);
+    return;
+  }
+
+  if (checker) {
+    const from = locationOf(checker);
+    if (from === null || colorOf(checker) !== state.currentPlayer) {
+      return;
+    }
+    if (from === selectedFrom) {
+      selectedFrom = null;
+    } else if (canSelect(from)) {
+      selectedFrom = from;
+    }
+    renderSelection();
+    return;
+  }
+
+  selectedFrom = null;
+  renderSelection();
+});
+
+rollButton.addEventListener('click', () => {
+  if (state.dice.length > 0 || state.winner) {
+    return;
+  }
+  state = withRoll(state, rollValues());
+  selectedFrom = null;
+  advanceTurn();
+});
+
+restartButton.addEventListener('click', () => {
+  state = createInitialState();
+  selectedFrom = null;
+  messageEl.textContent = '';
+  render();
+});
+
 hintsToggle.addEventListener('change', () => {
   hintsEnabled = hintsToggle.checked;
   pipCountEl.hidden = !hintsEnabled;
-  clearLegalTargets();
-  if (hintsEnabled && selectedChecker) {
-    highlightLegalTargets(selectedChecker);
-  }
+  renderSelection();
 });
 
-updatePipCounts();
+render();
