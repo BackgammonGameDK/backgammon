@@ -49,20 +49,11 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    moves and database rules only restrict writing to a room you already know
    the code for, not to whose turn it is.
 3. UX/bug findings from a manual playtest (2026-08-15), highest-severity
-   first, not yet fixed:
-   - **Mobile Restart overlaps the turn indicator and can eat a real tap.**
-     At 375px width the `h1` is hidden (see the small-screen media query in
-     `style.css`) so `#turn-indicator`'s text rises into the fixed
-     `#restart-button`'s hit area — confirmed via bounding-rect overlap at
-     that width. Tapping the tail of a long turn message (e.g. "…opening
-     roll: White 1, Black 2") can hit Restart instead and wipe the game.
-   - **Can't switch selection directly between two of your own checkers.**
-     Selecting checker A, then clicking checker B (same color), doesn't
-     re-select B — `board`'s click handler (`script.js`) sees any click
-     inside a `.point` as a move attempt once something is selected, so it
-     tries to move A onto B's point, fails, and flashes B's point invalid
-     instead of just selecting B. Requires deselecting first, which isn't
-     obvious and interrupts play on every turn.
+   first. The top two are fixed: mobile Restart no longer overlaps the turn
+   indicator (`.status-row` now clears the fixed button's hit area on
+   narrow/short screens, `style.css`), and clicking a different own-color
+   checker now switches the selection instead of being misread as a move
+   attempt (`script.js`'s click handler). Still not fixed:
    - **Rejected clicks are silent.** Bar priority, no legal destinations,
      wrong color, dice not yet rolled — none of these show a message,
      unlike the existing "No legal move for N — skipped" text. `showMessage`

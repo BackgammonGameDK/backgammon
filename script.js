@@ -359,6 +359,26 @@ board.addEventListener('click', (event) => {
     return;
   }
 
+  /* A click on a different own-color checker is ambiguous with a move
+     attempt onto its point (both match `.point`/`.checker` at once). Only
+     treat it as a move if that point is actually a legal destination for
+     the selected checker (e.g. stacking onto it) - otherwise the click
+     means "select this checker instead", not "attempt an illegal move". */
+  if (
+    selectedFrom !== null &&
+    checker &&
+    colorOf(checker) === state.currentPlayer &&
+    locationOf(checker) !== selectedFrom &&
+    !getLegalDestinations(state, state.currentPlayer, selectedFrom).includes(locationOf(checker))
+  ) {
+    const from = locationOf(checker);
+    if (canSelect(from)) {
+      selectedFrom = from;
+      renderSelection();
+    }
+    return;
+  }
+
   if (selectedFrom !== null && point && Number(point.dataset.point) !== selectedFrom) {
     attemptMove(selectedFrom, Number(point.dataset.point), point);
     return;

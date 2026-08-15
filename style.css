@@ -638,8 +638,11 @@ button,
   :root {
     /* Vertical space the compacted dice area takes up above the board.
        Measured, not guessed - re-measure if the dice area gains or loses
-       a row, or the board will stop fitting the screen exactly. */
-    --chrome: 228px;
+       a row, or the board will stop fitting the screen exactly. Includes
+       the 36px .status-row top clearance below (also measured, not
+       guessed) that keeps the turn indicator's text out from under the
+       fixed Restart button once the h1 is hidden. */
+    --chrome: 264px;
     --board-border: 5px;
     --point-pad: 3px;
     /* Wider than on desktop so a checker on the bar stays the same size as
@@ -660,6 +663,18 @@ button,
   .dice-area {
     gap: 6px;
     margin-bottom: 8px;
+  }
+
+  /* h1 is hidden at this width, so .status-row would otherwise start at
+     the very top - the same vertical position as the fixed Restart
+     button below - and a long turn message (e.g. an opening-roll line)
+     can then render far enough right to sit under the button's hit area.
+     36px clears the button's rendered bottom edge (~29.5px tall, 8px
+     offset from the top) plus a small buffer. Measured, not guessed -
+     re-measure (and adjust --chrome above by the same delta) if the
+     button's size changes. */
+  .status-row {
+    margin-top: 36px;
   }
 
   .dice {
@@ -746,6 +761,15 @@ button,
 @media (max-height: 500px) and (orientation: landscape) {
   :root {
     --chrome: 62px;
+  }
+
+  /* .status-row is just one wrapped item in .dice-area's row layout here,
+     not pinned to the top the way it is in the portrait/narrow layout
+     above, so it doesn't sit under the fixed Restart button the same way
+     - and the 62px chrome budget has no room to spare for the 36px
+     clearance anyway. Confirmed via bounding-rect check at 812x375. */
+  .status-row {
+    margin-top: 0;
   }
 
   .dice-area {
