@@ -394,6 +394,9 @@ function restartGame() {
   if (onlineRoom && onlineColor === 'spectator') {
     return;
   }
+  if (onlineRoom && !bothSeatsClaimed(latestRoom)) {
+    return;
+  }
   selectedFrom = null;
   messageEl.textContent = '';
   commitState(createInitialState());
@@ -462,6 +465,18 @@ function blockedOnline() {
   return onlineColor !== state.currentPlayer;
 }
 
+/* Both seats claimed - i.e. an opponent has shown up at least once (seats
+   are never freed, so this doesn't require them to still be connected; see
+   the presence discussion above). Used to gate anything that generates a
+   fresh opening roll (the initial seed in handleRoomUpdate, and Restart):
+   otherwise the room's creator, alone in the room, could keep generating
+   opening rolls with nobody else watching and only broadcast once one
+   favors them - see handleRoomUpdate below for why the seed itself needs
+   the same guard. */
+function bothSeatsClaimed(room) {
+  return Boolean(room && room.seats && room.seats.white && room.seats.black);
+}
+
 /* Every local change to `state` goes through here rather than assigning the
    variable directly, so hot-seat and online play are the same call site
    with one branch: apply it locally, or hand it to sync.js to broadcast
@@ -502,13 +517,24 @@ function renderRoomStatus(room) {
   }
   roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${status}`;
   roomStatusEl.classList.toggle('room-status--warning', status === ' — opponent disconnected');
+
+  const restartBlocked = onlineColor === 'spectator' || !bothSeatsClaimed(room);
+  restartButton.disabled = restartBlocked;
+  playAgainButton.disabled = restartBlocked;
 }
 
 /* Fires once on join with whatever is already in the room (possibly empty),
    and again every time it changes - whether this client changed it or
-   another one did. If the room has no state yet, this client created it:
-   seed the starting position and broadcast it, rather than leaving the
-   room empty until someone moves.
+   another one did. If the room has no state yet and both seats are now
+   claimed, White seeds the starting position (including the opening roll)
+   and broadcasts it.
+
+   Seeding waits for both seats deliberately: seeding it the moment White
+   alone creates the room would let White see the opening roll - and
+   Restart to re-roll it - with nobody else in the room to notice, before
+   Black ever shows up. Gating on bothSeatsClaimed (also enforced in
+   restartGame) means the opening roll only ever happens with both players
+   present to see it, same as any later restart.
 
    `== null` rather than `=== null`: Firebase never actually stores a null
    value - a key written as null is simply absent from what a listener
@@ -520,7 +546,7 @@ function handleRoomUpdate(room, color) {
   renderRoomStatus(room);
 
   if (room.state == null) {
-    if (color === 'white') {
+    if (color === 'white' && bothSeatsClaimed(room)) {
       onlineRoom.sendState(createInitialState());
     }
     return;
