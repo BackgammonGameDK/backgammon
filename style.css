@@ -473,9 +473,9 @@ body {
   flex-shrink: 0;
   max-height: 100%;
   overflow: hidden;
-  position: relative;
   background: #2e1a0e;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -488,20 +488,20 @@ body {
   gap: 4px;
 }
 
-/* 15 checkers of one color don't fit the tray's fixed height, so past a
-   point the pile is clipped (see .off's overflow: hidden) rather than
-   scrolled - this badge is the actual source of truth for the count.
-   Fixed px like the rest of the small UI chrome (.pip, .die, etc.), not a
-   % of the tray - font-size can't be expressed as a fraction of an
-   element's own box the way width can. Light background so it stays
-   legible over a pile of either color. Empty (and hidden) at 0, matching
-   the #message/#game-over :empty idiom. */
+/* script.js caps how many checkers actually get rendered here (see
+   MAX_VISIBLE_OFF) - rather than clipping an oversized pile, the tray
+   only ever holds as many whole checkers as fit next to the count badge
+   below. A normal flex sibling of .off-checkers, not absolutely
+   positioned over it, so the two share the tray's height instead of the
+   badge covering the last checker or two. Fixed px like the rest of the
+   small UI chrome (.pip, .die, etc.), not a % of the tray - font-size
+   can't be expressed as a fraction of an element's own box the way width
+   can. Light background so it stays legible over a pile of either color.
+   Empty (and hidden) at 0, matching the #message/#game-over :empty
+   idiom - .off-checkers then gets the tray's full height back. */
 .off-count {
-  position: absolute;
-  left: 50%;
-  bottom: 3px;
-  transform: translateX(-50%);
-  z-index: 2;
+  flex-shrink: 0;
+  margin-top: 2px;
   min-width: 16px;
   padding: 1px 3px;
   border-radius: 999px;
@@ -512,7 +512,6 @@ body {
   font-weight: bold;
   text-align: center;
   line-height: 1.4;
-  pointer-events: none;
 }
 
 /* Matches .checker.black's fill/border so the badge reads as "black's

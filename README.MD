@@ -54,8 +54,9 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    narrow/short screens, `style.css`), clicking a different own-color
    checker now switches the selection instead of being misread as a move
    attempt (`script.js`'s click handler), and the bear-off tray no longer
-   scrolls — it clips past 15 checkers and shows a count badge instead
-   (`.off-count`, `style.css`/`script.js`). Still not fixed:
+   scrolls — it renders only as many whole checkers as fit
+   (`MAX_VISIBLE_OFF`, `script.js`) and shows the true count in a badge
+   instead (`.off-count`, `style.css`). Still not fixed:
    - **Rejected clicks are silent.** Bar priority, no legal destinations,
      wrong color, dice not yet rolled — none of these show a message,
      unlike the existing "No legal move for N — skipped" text. `showMessage`

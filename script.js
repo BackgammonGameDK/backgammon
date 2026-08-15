@@ -57,6 +57,19 @@ const offCountEls = {
   black: document.querySelector('.off-count[data-owner="black"]'),
 };
 
+/* How many checkers the off tray actually renders, regardless of how many
+   are really borne off - .off-count (see renderOffCounts) carries the true
+   number past this point. The count badge sits below the checkers as a
+   normal flex sibling (style.css), not overlaid on top of them, so it
+   needs to be counted as part of what has to fit. Measured, not guessed:
+   at a 375px-wide mobile viewport (the tightest case) a checker pile plus
+   the badge stops fitting the tray's height past 4 checkers, so 4 is the
+   largest count that's safe at every breakpoint - re-measure if
+   checker/tray/badge sizing changes. Kept as one constant rather than a
+   per-breakpoint value to avoid coupling this file to style.css's exact
+   media query breakpoints. */
+const MAX_VISIBLE_OFF = 4;
+
 let state = createInitialState();
 let selectedFrom = null;
 let hintsEnabled = false;
@@ -133,8 +146,8 @@ function desiredLayout() {
 
   layout.set(barContainers.white, { color: 'white', count: state.bar.white });
   layout.set(barContainers.black, { color: 'black', count: state.bar.black });
-  layout.set(offContainers.white, { color: 'white', count: state.off.white });
-  layout.set(offContainers.black, { color: 'black', count: state.off.black });
+  layout.set(offContainers.white, { color: 'white', count: Math.min(state.off.white, MAX_VISIBLE_OFF) });
+  layout.set(offContainers.black, { color: 'black', count: Math.min(state.off.black, MAX_VISIBLE_OFF) });
 
   return layout;
 }
