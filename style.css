@@ -868,8 +868,12 @@ button,
    shrink behavior (only .dice-area below is flex-shrink: 0) automatically
    caps that growth back down on a viewport too narrow for the full
    height-driven size - no separate width-based budget constant needed
-   for *that* the way --chrome covers the height axis. A fixed-position
-   element is a second matter, though (see body's padding-right below). */
+   the way --chrome covers the height axis. #restart-button joins the
+   sidebar here too (see below) rather than staying position: fixed like
+   it does everywhere else - a fixed corner the board doesn't know is
+   spoken for would otherwise force reserving space for it another way,
+   the same problem solved differently (and worse - it shrank the board)
+   in an earlier version of this layout. */
 @media (max-height: 500px) and (orientation: landscape) {
   :root {
     /* Vertical budget only: with .dice-area beside the board rather than
@@ -887,23 +891,13 @@ button,
     align-items: center;
     justify-content: center;
     gap: 12px;
-    /* #restart-button stays position: fixed here (unchanged from the
-       ≤900px block) rather than joining the sidebar, but a growing board
-       doesn't know that fixed corner is spoken for - grown enough (a
-       wide, not-too-short landscape phone), its top-right edge reaches
-       right under Restart. Flexbox treats body's padding as unavailable
-       space the same way it already treats the sidebar's width, so
-       reserving Restart's footprint (~72px wide, 8px inset) here, plus a
-       small buffer, keeps the board's own shrink-to-fit behavior from
-       ever growing it into that corner. Measured, not guessed -
-       re-measure if Restart's size/position in the ≤900px block changes. */
-    padding-right: 96px;
   }
 
   /* Overrides the ≤900px block's 36px clearance below, which exists so
      .status-row's text doesn't sit under the fixed Restart button - not a
-     risk here, since .status-row is now the top of a narrow sidebar off
-     to the left, nowhere near Restart's top-right corner. */
+     risk here, since .status-row is the top of a narrow sidebar off to
+     the left, nowhere near Restart (itself no longer fixed in this
+     breakpoint - see below). */
   .status-row {
     margin-top: 0;
   }
@@ -923,6 +917,19 @@ button,
     flex-shrink: 0;
     width: 220px;
     margin-bottom: 0;
+  }
+
+  /* Joins the sidebar's normal flex flow instead of floating fixed in a
+     corner (unlike every other breakpoint) - moved to the end of
+     .dice-area in index.html so it lands last, well clear of Roll, with
+     extra margin-top on top of the sidebar's own gap: Restart is
+     destructive (wipes the game state), and a past bug (see README) had
+     it eat a mis-tap meant for something else once content drifted too
+     close to its old fixed position. Distance is the same guard here,
+     just achieved by ordering/spacing instead of position: fixed. */
+  #restart-button {
+    position: static;
+    margin-top: 18px;
   }
 
   .dice {
