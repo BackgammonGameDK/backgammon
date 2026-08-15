@@ -10,19 +10,17 @@
   --checker-in-point: 52.5%;
   --checker-in-tray: 86%;
   /* Vertical space the header (title through Roll/messages) takes up above
-     the board: 335px measured on a window tall enough that the board isn't
-     itself height-constrained, plus a few px of slack. Re-measure the same
-     way if the header gains or loses a row, or this stops being accurate.
+     the board. Estimated at 308px from the previous measured value (335px)
+     minus the margin/gap trims made alongside this change - not yet
+     re-measured against a real render, unlike the rest of this file's
+     measurements. Re-measure the same way (a window tall enough that the
+     board isn't itself height-constrained, then read .board's top offset)
+     if this turns out to be off, or if the header gains or loses a row.
 
-     Caps the board's height on any window short enough to need it. Full
-     950x640 needs roughly --chrome + 640px of height (about 975px here) -
-     below that, which is most non-maximized laptop windows, the board is
-     genuinely smaller than 950x640, not just on small/mobile screens. That
-     first attempt at this comment claimed otherwise; it was wrong - the
-     board always shrinking on unmaximized windows is exactly what fixes a
-     desktop window not being able to show the board and Roll/Restart
-     together at once. */
-  --chrome: 340px;
+     Caps the board's height on any window short enough to need it - which
+     is most non-maximized desktop windows, not just small/mobile screens;
+     see the comment on .board below for why. */
+  --chrome: 308px;
 }
 
 * {
@@ -42,8 +40,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .dice {
@@ -316,24 +314,24 @@ body {
   color: #ccc;
 }
 
-/* The board keeps its 950x640 proportions at every size, shrinking to fit
-   whichever runs out first: the 950px design width, the width it's given,
-   or the available height converted to a width via the aspect ratio (see
-   --chrome above). Everything inside is sized in % of the board, so this
-   one number drives the whole scale.
+/* The board keeps its 950x640 proportions at every size, shrinking OR
+   growing to fit whichever runs out first: the 1300px design ceiling, the
+   width it's given, or the available height converted to a width via the
+   aspect ratio (see --chrome above). Everything inside is sized in % of
+   the board, so this one number drives the whole scale - raising the
+   ceiling past the original 950px is what lets the board actually grow on
+   a large or tall window instead of topping out early.
 
-   The height term applies everywhere, not just small screens - a desktop
-   browser window that isn't maximized needs it just as much as a phone
-   does. Full size needs roughly --chrome + 640px of viewport height
-   (currently about 980px); below that, which is most non-maximized
-   laptop windows, the board is genuinely smaller than 950x640 now, not
-   only on small/mobile screens - that's the fix for a desktop window not
-   being able to show the board and Roll/Restart together at once. */
+   The height term is usually the binding one on a typical desktop window
+   (they're wider than tall relative to a 950:640 board), which is why
+   trimming --chrome and this margin matters more, for most windows, than
+   the width ceiling does - the ceiling mainly helps once a window is tall
+   enough (roughly --chrome + 813px) to reach it at all. */
 .board {
   width: 100%;
-  max-width: min(950px, calc((100dvh - var(--chrome)) * 950 / 640));
+  max-width: min(1300px, calc((100dvh - var(--chrome)) * 950 / 640));
   aspect-ratio: 950 / 640;
-  margin: 20px auto;
+  margin: 12px auto;
   background: #4a2c17;
   border: var(--board-border) solid #2e1a0e;
   border-radius: 6px;
