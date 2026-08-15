@@ -1,3 +1,16 @@
+:root {
+  --board-border: 10px;
+  --point-pad: 8px;
+  --tray-width: 4.6%;
+  /* Checker diameter as a % of the point it sits in, and of the narrower
+     bar/off trays - both chosen to reproduce the original 34px checker at
+     the 950px design width. On small screens the point share goes up: the
+     board can't grow, so the checkers have to use more of the room they
+     have to stay tappable. */
+  --checker-in-point: 52.5%;
+  --checker-in-tray: 86%;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -143,14 +156,23 @@ body {
   color: #fff;
 }
 
+/* The board keeps its 950x640 proportions at every size, shrinking to fit
+   the width it's given. Everything inside is sized in % of the board, so
+   this one number drives the whole scale.
+
+   Deliberately width-only here: on a desktop window the board stays at its
+   full 950x640 and the page scrolls, exactly as it did before. Small
+   screens additionally cap it by viewport height (see the media queries),
+   where fitting on screen matters more than a fixed size. */
 .board {
-  width: 950px;
-  height: 640px;
+  width: 100%;
+  max-width: 950px;
+  aspect-ratio: 950 / 640;
   margin: 20px auto;
   background: #4a2c17;
-  border: 10px solid #2e1a0e;
+  border: var(--board-border) solid #2e1a0e;
   border-radius: 6px;
-  padding: 10px 30px;
+  padding: 1% 3%;
   display: flex;
   flex-direction: column;
 }
@@ -168,7 +190,8 @@ body {
 }
 
 .bar {
-  width: 40px;
+  width: var(--tray-width);
+  flex-shrink: 0;
   background: #2e1a0e;
   display: flex;
   align-items: center;
@@ -176,6 +199,7 @@ body {
 }
 
 .bar-checkers {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -183,7 +207,8 @@ body {
 }
 
 .off {
-  width: 40px;
+  width: var(--tray-width);
+  flex-shrink: 0;
   max-height: 100%;
   overflow-y: auto;
   background: #2e1a0e;
@@ -193,6 +218,7 @@ body {
 }
 
 .off-checkers {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -227,13 +253,13 @@ body {
 .point-down {
   flex-direction: column;
   align-items: center;
-  padding-top: 8px;
+  padding-top: var(--point-pad);
 }
 
 .point-up {
   flex-direction: column-reverse;
   align-items: center;
-  padding-bottom: 8px;
+  padding-bottom: var(--point-pad);
 }
 
 .point.odd::before {
@@ -255,15 +281,23 @@ body {
   box-shadow: inset 0 0 0 4px #6b8fa3;
 }
 
+/* Sized as a % of the containing point (or tray) rather than in px, so
+   checkers scale with the board instead of overflowing it as it shrinks.
+   aspect-ratio keeps them circular without a matching height. */
 .checker {
   position: relative;
   z-index: 1;
-  width: 34px;
-  height: 34px;
+  width: var(--checker-in-point);
+  aspect-ratio: 1;
   border-radius: 50%;
   margin: 2px 0;
   flex-shrink: 0;
   cursor: pointer;
+}
+
+.bar-checkers .checker,
+.off-checkers .checker {
+  width: var(--checker-in-tray);
 }
 
 .checker.animating {
@@ -282,4 +316,163 @@ body {
 
 .checker.selected {
   box-shadow: 0 0 0 3px gold;
+}
+
+/* Removes the ~300ms double-tap-to-zoom delay on touch devices, so tapping
+   a checker feels immediate rather than laggy. */
+.checker,
+.point,
+.off,
+button,
+#hints-toggle-label {
+  touch-action: manipulation;
+}
+
+#rotate-hint {
+  display: none;
+  font-size: 13px;
+  color: #e0a030;
+  font-style: italic;
+}
+
+/* ---- Small screens ----------------------------------------------------
+   The board can only be as wide as the screen, so the win here comes from
+   giving it more of the screen: the title goes, the dice area collapses to
+   a compact row, and the checkers claim a larger share of each point.
+
+   Triggers on a narrow viewport OR a short one, so a short-but-wide window
+   (a landscape tablet) gets the compact chrome the board sizing assumes. */
+@media (max-width: 900px), (max-height: 500px) {
+  :root {
+    /* Vertical space the compacted dice area takes up above the board.
+       Measured, not guessed - re-measure if the dice area gains or loses
+       a row, or the board will stop fitting the screen exactly. */
+    --chrome: 228px;
+    --board-border: 5px;
+    --point-pad: 3px;
+    /* Wider than on desktop so a checker on the bar stays the same size as
+       one on a point - at 4.6% the trays would squeeze it noticeably. */
+    --tray-width: 6%;
+    --checker-in-point: 78%;
+    --checker-in-tray: 90%;
+  }
+
+  body {
+    padding: 8px;
+  }
+
+  h1 {
+    display: none;
+  }
+
+  .dice-area {
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .dice {
+    gap: 8px;
+    min-height: 44px;
+  }
+
+  .die {
+    width: 44px;
+    height: 44px;
+    padding: 5px;
+    border-radius: 7px;
+  }
+
+  .pip {
+    width: 7px;
+    height: 7px;
+  }
+
+  #turn-indicator {
+    font-size: 16px;
+  }
+
+  #game-over {
+    font-size: 18px;
+  }
+
+  /* Comfortably above the ~44px minimum for a reliable touch target. */
+  #roll-button {
+    padding: 12px 32px;
+    font-size: 16px;
+  }
+
+  #restart-button {
+    top: 8px;
+    right: 8px;
+  }
+
+  /* Also cap by height, so the whole board is on screen without scrolling:
+     the available height, converted to a width through the aspect ratio. */
+  .board {
+    margin: 0 auto;
+    max-width: min(950px, calc((100dvh - var(--chrome)) * 950 / 640));
+  }
+
+  .checker {
+    margin: 1px 0;
+  }
+
+  .bar-checkers,
+  .off-checkers {
+    gap: 2px;
+  }
+}
+
+/* A 24-point board is inherently wide, so a portrait phone is the worst
+   case - landscape roughly doubles the usable checker size. Nudge rather
+   than block, since the game stays playable either way.
+
+   Phone widths only: a portrait tablet already has room for comfortable
+   checkers, so telling it to rotate would be bad advice. */
+@media (max-width: 600px) and (orientation: portrait) {
+  #rotate-hint {
+    display: block;
+  }
+}
+
+/* Landscape phones are height-limited, not width-limited: strip the chrome
+   back further so the board can use nearly the full height. */
+@media (max-height: 500px) and (orientation: landscape) {
+  :root {
+    --chrome: 62px;
+  }
+
+  .dice-area {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .dice {
+    min-height: 34px;
+  }
+
+  .die {
+    width: 34px;
+    height: 34px;
+    padding: 4px;
+  }
+
+  .pip {
+    width: 5px;
+    height: 5px;
+  }
+
+  #message:empty,
+  #game-over:empty {
+    display: none;
+  }
+
+  #message,
+  #game-over {
+    min-height: 0;
+    width: 100%;
+  }
 }
