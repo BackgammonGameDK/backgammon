@@ -186,6 +186,7 @@ function deserializeState(raw) {
     dice: raw.dice || [],
     currentPlayer: raw.currentPlayer,
     winner: raw.winner || null,
+    openingRoll: raw.openingRoll || null,
   };
 }
 

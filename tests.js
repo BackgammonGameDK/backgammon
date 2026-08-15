@@ -76,6 +76,14 @@ function withDice(state, ...values) {
   return state;
 }
 
+/* Feeds a fixed sequence of Math.random()-shaped fractions to code under
+   test, one per call - unlike a constant function, this can express a tied
+   opening roll followed by a differing one without looping forever. */
+function sequenceRandom(values) {
+  let i = 0;
+  return () => values[i++];
+}
+
 /* ---- starting position ---- */
 
 test('initial position gives each player 15 checkers', () => {
@@ -90,8 +98,23 @@ test('initial pip count is 167 for both players', () => {
   assertEqual(pipCount(state, 'black'), 167, 'black pips');
 });
 
-test('white moves first', () => {
-  assertEqual(createInitialState().currentPlayer, 'white');
+/* ---- opening roll (deciding who starts) ---- */
+
+test('the higher single-die roll starts, keeping both rolls as its first turn\'s dice', () => {
+  const result = rollOpeningRoll(sequenceRandom([0.95, 0.45])); // 6 vs 3
+  assertEqual(result, { white: 6, black: 3, starter: 'white' });
+});
+
+test('a tied opening roll is rerolled rather than left unresolved', () => {
+  const result = rollOpeningRoll(sequenceRandom([0.45, 0.45, 0.95, 0.25])); // tie at 3-3, then 6 vs 2
+  assertEqual(result, { white: 6, black: 2, starter: 'white' });
+});
+
+test('createInitialState wires the opening roll into currentPlayer, dice, and openingRoll', () => {
+  const state = createInitialState(sequenceRandom([0.25, 0.75])); // 2 vs 5
+  assertEqual(state.currentPlayer, 'black', 'higher roll (5) starts');
+  assertEqual(state.dice.map((d) => d.value), [2, 5], 'both individual rolls become the first turn\'s dice');
+  assertEqual(state.openingRoll, { white: 2, black: 5 });
 });
 
 /* ---- direction ---- */
@@ -256,9 +279,17 @@ test('bear-off availability counts toward a die being usable', () => {
 
 test('ending a turn switches player and clears the dice', () => {
   const state = withDice(createInitialState(), 3, 5);
+  state.currentPlayer = 'white';
   const next = endTurn(state);
   assertEqual(next.currentPlayer, 'black', 'switched to black');
   assertEqual(next.dice, [], 'dice cleared');
+});
+
+test('ending a turn also clears the opening-roll banner', () => {
+  const state = withDice(createInitialState(), 3, 5);
+  state.openingRoll = { white: 6, black: 2 };
+  const next = endTurn(state);
+  assertEqual(next.openingRoll, null, 'opening roll no longer shown once the first turn is over');
 });
 
 test('a player cannot move on the opponent turn', () => {
@@ -302,6 +333,7 @@ test('state survives a JSON round trip unchanged', () => {
 
 test('no checker is ever lost across a sequence of moves', () => {
   let state = withDice(createInitialState(), 6, 5);
+  state.currentPlayer = 'white';
 
   let result = applyMove(state, 'white', 24, 18);
   assert(result.ok, '24 -> 18');

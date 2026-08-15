@@ -22,7 +22,23 @@ const BAR_PIPS = 25;
 const BAR = 'bar';
 const OFF = 'off';
 
-function createInitialState() {
+/* Standard opening procedure: each player rolls one die, high roll starts,
+   a tie is rerolled. The starting player's first turn then uses both of
+   these individual die values as its dice - same as any other turn, no
+   special doubles handling, since a tie (the only way the two values could
+   match) is exactly what got rerolled away. */
+function rollOpeningRoll(randomFn) {
+  const random = randomFn || Math.random;
+  let white;
+  let black;
+  do {
+    white = Math.floor(random() * 6) + 1;
+    black = Math.floor(random() * 6) + 1;
+  } while (white === black);
+  return { white, black, starter: white > black ? 'white' : 'black' };
+}
+
+function createInitialState(randomFn) {
   const points = new Array(POINT_COUNT + 1).fill(null);
   points[1] = { color: 'black', count: 2 };
   points[6] = { color: 'white', count: 5 };
@@ -33,13 +49,19 @@ function createInitialState() {
   points[19] = { color: 'black', count: 5 };
   points[24] = { color: 'white', count: 2 };
 
+  const opening = rollOpeningRoll(randomFn);
+
   return {
     points,
     bar: { white: 0, black: 0 },
     off: { white: 0, black: 0 },
-    dice: [],
-    currentPlayer: 'white',
+    dice: [
+      { value: opening.white, played: false },
+      { value: opening.black, played: false },
+    ],
+    currentPlayer: opening.starter,
     winner: null,
+    openingRoll: { white: opening.white, black: opening.black },
   };
 }
 
@@ -51,6 +73,7 @@ function cloneState(state) {
     dice: state.dice.map((d) => ({ ...d })),
     currentPlayer: state.currentPlayer,
     winner: state.winner,
+    openingRoll: state.openingRoll ? { ...state.openingRoll } : null,
   };
 }
 
@@ -357,6 +380,7 @@ function endTurn(state) {
   const next = cloneState(state);
   next.currentPlayer = opponentOf(state.currentPlayer);
   next.dice = [];
+  next.openingRoll = null;
   return next;
 }
 

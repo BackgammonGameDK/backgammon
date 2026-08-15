@@ -198,11 +198,14 @@ function renderDice() {
   state.dice.forEach((die) => {
     diceContainer.appendChild(createDie(die, canUseDie(state, state.currentPlayer, die.value)));
   });
-  rollButton.disabled = state.dice.length > 0 || Boolean(state.winner);
+  rollButton.disabled = state.dice.length > 0 || Boolean(state.winner) || blockedOnline();
 }
 
 function renderStatus() {
-  turnIndicator.textContent = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
+  const turnText = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
+  turnIndicator.textContent = state.openingRoll
+    ? `${turnText} — opening roll: White ${state.openingRoll.white}, Black ${state.openingRoll.black}`
+    : turnText;
   pipCountEl.textContent = `Pips — White: ${pipCount(state, 'white')} · Black: ${pipCount(state, 'black')}`;
   gameOverEl.textContent = state.winner ? `${state.winner === 'white' ? 'White' : 'Black'} wins!` : '';
   renderCelebration();
@@ -428,16 +431,35 @@ hintsToggle.addEventListener('change', () => {
 let onlineRoom = null;
 let onlineColor = null;
 let currentRoomCode = null;
+/* Most recent room object seen from handleRoomUpdate - kept around so
+   blockedOnline() can check opponent seat occupancy without waiting for a
+   render pass. */
+let latestRoom = null;
 /* Which room the QR panel currently holds a rendered code for - regenerate
    only when that stops matching currentRoomCode, rather than on every
    toggle-open. */
 let qrRenderedForRoom = null;
 
-/* The single gate for "is it this tab's turn to act": both "it's the other
-   seat's turn" and "this tab is a spectator" reduce to the same check,
-   since state.currentPlayer is never 'spectator'. */
+/* The gate for "is this tab allowed to act right now": a spectator never
+   is; neither is a seated player before the other seat has ever been
+   claimed (nothing to roll against yet - see the "waiting for opponent"
+   status line); otherwise it comes down to whether it's this seat's turn.
+   Deliberately keyed on seat occupancy (room.seats), not live presence
+   (room.presence) - seats are never freed once claimed, so a later
+   disconnect shouldn't re-block a game that already started, only the
+   status line should mention it. */
 function blockedOnline() {
-  return Boolean(onlineRoom) && onlineColor !== state.currentPlayer;
+  if (!onlineRoom) {
+    return false;
+  }
+  if (onlineColor === 'spectator') {
+    return true;
+  }
+  const other = onlineColor === 'white' ? 'black' : 'white';
+  if (!(latestRoom && latestRoom.seats && latestRoom.seats[other])) {
+    return true;
+  }
+  return onlineColor !== state.currentPlayer;
 }
 
 /* Every local change to `state` goes through here rather than assigning the
@@ -494,6 +516,7 @@ function renderRoomStatus(room) {
    not null. `== null` matches both. */
 function handleRoomUpdate(room, color) {
   onlineColor = color;
+  latestRoom = room;
   renderRoomStatus(room);
 
   if (room.state == null) {
