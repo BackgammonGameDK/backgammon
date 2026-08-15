@@ -9,6 +9,13 @@
      have to stay tappable. */
   --checker-in-point: 52.5%;
   --checker-in-tray: 86%;
+  /* Vertical space the header (title through Roll/messages) takes up above
+     the board. Measured, not guessed - re-measure if the header gains or
+     loses a row, or the board will stop fitting the window exactly. Caps
+     the board's height on any window short enough to need it; on a tall
+     enough window this has no visible effect, since min() below still
+     picks 950px regardless. */
+  --chrome: 380px;
 }
 
 * {
@@ -106,8 +113,17 @@ body {
   color: #ccc;
 }
 
+/* No reserved min-height while empty (the common case) - collapsing to zero
+   height here is what closes the gap that used to sit permanently between
+   Roll and the board. Text still causes a small one-off layout shift when a
+   message appears, which is a fair trade against that gap being there on
+   every single load whether or not anything is showing. */
+#message:empty,
+#game-over:empty {
+  display: none;
+}
+
 #message {
-  min-height: 1.2em;
   color: #e0a030;
   font-style: italic;
 }
@@ -115,8 +131,99 @@ body {
 #game-over {
   font-weight: bold;
   font-size: 22px;
-  min-height: 1.4em;
   color: #4caf50;
+}
+
+/* Full-screen celebration on a win. #game-over above stays as the small,
+   permanent status line (so the result is still visible after this is
+   dismissed); this is the one-off moment on top of it. Click anywhere on
+   the backdrop, or Play Again, to dismiss - script.js only shows it once
+   per win (see celebrationShownFor), so it won't reappear on its own. */
+#celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  overflow: hidden;
+  animation: celebration-backdrop-in 200ms ease-out;
+}
+
+@keyframes celebration-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+#confetti-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  width: 10px;
+  height: 16px;
+  opacity: 0.9;
+  animation-name: confetti-fall;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  animation-fill-mode: forwards;
+}
+
+@keyframes confetti-fall {
+  to {
+    transform: translateY(115vh) rotate(600deg);
+    opacity: 0.6;
+  }
+}
+
+#celebration-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 40px 56px;
+  background: #2b2b2b;
+  border: 2px solid #6b4226;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  cursor: default;
+  animation: celebration-pop-in 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes celebration-pop-in {
+  from {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+}
+
+#celebration-message {
+  font-size: 36px;
+  font-weight: bold;
+  color: #e0a030;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(224, 160, 48, 0.4);
+}
+
+#play-again-button {
+  padding: 12px 32px;
+  font-size: 16px;
+  color: #fff;
+  background: #6b4226;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#play-again-button:hover {
+  background: #7d4e2d;
 }
 
 #roll-button {
@@ -189,16 +296,19 @@ body {
 }
 
 /* The board keeps its 950x640 proportions at every size, shrinking to fit
-   the width it's given. Everything inside is sized in % of the board, so
-   this one number drives the whole scale.
+   whichever runs out first: the 950px design width, the width it's given,
+   or the available height converted to a width via the aspect ratio (see
+   --chrome above). Everything inside is sized in % of the board, so this
+   one number drives the whole scale.
 
-   Deliberately width-only here: on a desktop window the board stays at its
-   full 950x640 and the page scrolls, exactly as it did before. Small
-   screens additionally cap it by viewport height (see the media queries),
-   where fitting on screen matters more than a fixed size. */
+   The height term applies everywhere, not just small screens - a desktop
+   browser window that isn't maximized needs it just as much as a phone
+   does, and on a window tall enough that it never binds, min() simply
+   picks 950px, so a normal-sized desktop window looks exactly as it did
+   before this term existed. */
 .board {
   width: 100%;
-  max-width: 950px;
+  max-width: min(950px, calc((100dvh - var(--chrome)) * 950 / 640));
   aspect-ratio: 950 / 640;
   margin: 20px auto;
   background: #4a2c17;
@@ -438,11 +548,11 @@ button,
     right: 8px;
   }
 
-  /* Also cap by height, so the whole board is on screen without scrolling:
-     the available height, converted to a width through the aspect ratio. */
+  /* The height-aware max-width itself is inherited from the base .board
+     rule unchanged - only --chrome (redefined above for this compact
+     header) and reclaiming the margin differ here. */
   .board {
     margin: 0 auto;
-    max-width: min(950px, calc((100dvh - var(--chrome)) * 950 / 640));
   }
 
   .checker {
@@ -452,6 +562,20 @@ button,
   .bar-checkers,
   .off-checkers {
     gap: 2px;
+  }
+
+  #celebration-content {
+    padding: 28px 32px;
+    gap: 14px;
+  }
+
+  #celebration-message {
+    font-size: 26px;
+  }
+
+  #play-again-button {
+    padding: 10px 24px;
+    font-size: 14px;
   }
 }
 

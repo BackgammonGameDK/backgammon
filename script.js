@@ -29,6 +29,10 @@ const playOnlineButton = document.querySelector('#play-online-button');
 const roomStatusEl = document.querySelector('#room-status');
 const roomInfoEl = document.querySelector('#room-info');
 const copyLinkButton = document.querySelector('#copy-link-button');
+const celebrationEl = document.querySelector('#celebration');
+const confettiLayer = document.querySelector('#confetti-layer');
+const celebrationMessageEl = document.querySelector('#celebration-message');
+const playAgainButton = document.querySelector('#play-again-button');
 
 /* White re-enters on points 19-24 (top row) and Black on 1-6 (bottom row),
    so each colour waits on the bar nearest where it will come back in. */
@@ -45,6 +49,12 @@ const offContainers = {
 let state = createInitialState();
 let selectedFrom = null;
 let hintsEnabled = false;
+/* Which winning color the celebration overlay has already been shown for,
+   distinct from state.winner itself: dismissing the overlay only hides it,
+   it doesn't clear state.winner, so without this the very next render()
+   (e.g. a routine online sync) would immediately show it again. Reset to
+   null on restart. */
+let celebrationShownFor = null;
 
 function pointElement(pointNumber) {
   return document.querySelector(`.point[data-point="${pointNumber}"]`);
@@ -189,6 +199,45 @@ function renderStatus() {
   turnIndicator.textContent = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
   pipCountEl.textContent = `Pips — White: ${pipCount(state, 'white')} · Black: ${pipCount(state, 'black')}`;
   gameOverEl.textContent = state.winner ? `${state.winner === 'white' ? 'White' : 'Black'} wins!` : '';
+  renderCelebration();
+}
+
+const CONFETTI_COLORS = ['#e0a030', '#4caf50', '#6b8fa3', '#e67e22', '#c9a066', '#f0d9b5'];
+const CONFETTI_PIECE_COUNT = 60;
+
+function spawnConfetti() {
+  confettiLayer.innerHTML = '';
+  for (let i = 0; i < CONFETTI_PIECE_COUNT; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+    piece.style.transform = `rotate(${Math.random() * 360}deg)`;
+    piece.style.animationDuration = `${2 + Math.random() * 1.5}s`;
+    piece.style.animationDelay = `${Math.random() * 0.6}s`;
+    confettiLayer.appendChild(piece);
+  }
+}
+
+/* Shows the overlay once per win (see celebrationShownFor above), and
+   resets that guard once the game is no longer over - covering both a
+   restart (state.winner goes back to null) and, in online play, a state
+   arriving from another client that hasn't won. */
+function renderCelebration() {
+  if (!state.winner) {
+    celebrationShownFor = null;
+    celebrationEl.hidden = true;
+    return;
+  }
+
+  if (celebrationShownFor === state.winner) {
+    return;
+  }
+  celebrationShownFor = state.winner;
+
+  celebrationMessageEl.textContent = `${state.winner === 'white' ? 'White' : 'Black'} wins!`;
+  spawnConfetti();
+  celebrationEl.hidden = false;
 }
 
 function clearHighlights() {
@@ -332,13 +381,27 @@ rollButton.addEventListener('click', () => {
   commitState(resolveTurn(withRoll(state, rollValues())));
 });
 
-restartButton.addEventListener('click', () => {
+function restartGame() {
   if (onlineRoom && onlineColor === 'spectator') {
     return;
   }
   selectedFrom = null;
   messageEl.textContent = '';
   commitState(createInitialState());
+}
+
+restartButton.addEventListener('click', restartGame);
+playAgainButton.addEventListener('click', restartGame);
+
+/* Dismiss on any click on the backdrop, but not one that started inside
+   the card itself - stopping propagation there rather than checking
+   event.target here, so a click on the card's padding (not the button)
+   doesn't dismiss either. */
+celebrationEl.addEventListener('click', () => {
+  celebrationEl.hidden = true;
+});
+document.querySelector('#celebration-content').addEventListener('click', (event) => {
+  event.stopPropagation();
 });
 
 hintsToggle.addEventListener('change', () => {
