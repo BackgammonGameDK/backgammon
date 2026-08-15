@@ -867,8 +867,9 @@ button,
    formula (see .board above) grow it dramatically, and flexbox's default
    shrink behavior (only .dice-area below is flex-shrink: 0) automatically
    caps that growth back down on a viewport too narrow for the full
-   height-driven size - no separate width-based budget constant needed,
-   unlike --chrome for the height axis. */
+   height-driven size - no separate width-based budget constant needed
+   for *that* the way --chrome covers the height axis. A fixed-position
+   element is a second matter, though (see body's padding-right below). */
 @media (max-height: 500px) and (orientation: landscape) {
   :root {
     /* Vertical budget only: with .dice-area beside the board rather than
@@ -886,6 +887,17 @@ button,
     align-items: center;
     justify-content: center;
     gap: 12px;
+    /* #restart-button stays position: fixed here (unchanged from the
+       ≤900px block) rather than joining the sidebar, but a growing board
+       doesn't know that fixed corner is spoken for - grown enough (a
+       wide, not-too-short landscape phone), its top-right edge reaches
+       right under Restart. Flexbox treats body's padding as unavailable
+       space the same way it already treats the sidebar's width, so
+       reserving Restart's footprint (~72px wide, 8px inset) here, plus a
+       small buffer, keeps the board's own shrink-to-fit behavior from
+       ever growing it into that corner. Measured, not guessed -
+       re-measure if Restart's size/position in the ≤900px block changes. */
+    padding-right: 96px;
   }
 
   /* Overrides the ≤900px block's 36px clearance below, which exists so
