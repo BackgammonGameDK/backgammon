@@ -859,28 +859,58 @@ button,
   }
 }
 
-/* Landscape phones are height-limited, not width-limited: strip the chrome
-   back further so the board can use nearly the full height. */
+/* Landscape phones are height-limited, not width-limited - and a row of
+   chrome above the board (like the ≤900px layout below uses) wastes
+   exactly the dimension this shape has plenty of. A left-hand sidebar
+   next to the board uses it instead: freeing nearly all the vertical
+   space chrome used to take lets the board's height-driven max-width
+   formula (see .board above) grow it dramatically, and flexbox's default
+   shrink behavior (only .dice-area below is flex-shrink: 0) automatically
+   caps that growth back down on a viewport too narrow for the full
+   height-driven size - no separate width-based budget constant needed,
+   unlike --chrome for the height axis. */
 @media (max-height: 500px) and (orientation: landscape) {
   :root {
-    --chrome: 62px;
+    /* Vertical budget only: with .dice-area beside the board rather than
+       above it, this is just body's own padding (8px top + 8px bottom) -
+       .board's margin is zeroed out by the ≤900px block below, and still
+       applies here too (both media queries match a landscape phone at
+       once), so it contributes nothing on top of that. Measured, not
+       guessed - re-measure if body's padding in that block changes. */
+    --chrome: 16px;
   }
 
-  /* .status-row is just one wrapped item in .dice-area's row layout here,
-     not pinned to the top the way it is in the portrait/narrow layout
-     above, so it doesn't sit under the fixed Restart button the same way
-     - and the 62px chrome budget has no room to spare for the 36px
-     clearance anyway. Confirmed via bounding-rect check at 812x375. */
+  body {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  /* Overrides the ≤900px block's 36px clearance below, which exists so
+     .status-row's text doesn't sit under the fixed Restart button - not a
+     risk here, since .status-row is now the top of a narrow sidebar off
+     to the left, nowhere near Restart's top-right corner. */
   .status-row {
     margin-top: 0;
   }
 
+  /* Back to a column (like the non-landscape default), not the wrapped
+     row the ≤900px layout uses, now that this is a sidebar beside the
+     board rather than a header above it. Fixed width, measured to
+     comfortably fit everything it holds - including 4 dice on a double,
+     and the room-status popover's contents (#room-details) - without any
+     of it overflowing sideways; re-measure if that content's own sizing
+     changes. #pre-join-area and #room-details wrapping onto multiple
+     lines here (both already allow it) is expected and fine, unlike at
+     the other breakpoints where the comments on those rules assume a
+     single row - there's no scarce height budget being protected here. */
   .dice-area {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px;
-    margin-bottom: 6px;
+    flex-direction: column;
+    flex-shrink: 0;
+    width: 220px;
+    margin-bottom: 0;
   }
 
   .dice {
