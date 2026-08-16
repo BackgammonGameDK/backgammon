@@ -56,7 +56,9 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    attempt (`script.js`'s click handler), and the bear-off tray no longer
    scrolls — it renders only as many whole checkers as fit
    (`MAX_VISIBLE_OFF`, `script.js`) and shows the true count in a badge
-   instead (`.off-count`, `style.css`). Still not fixed:
+   instead (`.off-count`, `style.css`). Points and the bar later got the
+   identical treatment once testing found they had the same unbounded-pile
+   problem the bear-off tray did (see Status). Still not fixed:
    - **Rejected clicks are silent.** Bar priority, no legal destinations,
      wrong color, dice not yet rolled — none of these show a message,
      unlike the existing "No legal move for N — skipped" text. `showMessage`
@@ -206,3 +208,7 @@ Landscape phones got the same board-growing treatment as desktop, but the opposi
 The desktop `<h1>` had never actually been styled — it was carrying the browser's default title margins (title case: fine on a generic page, wasteful on one whose whole layout budget is measured to the pixel), noticeably more headroom than the fixed Restart button right next to it uses. Trimmed to nearly match Restart, growing the desktop board a bit further.
 
 Closed a fairness gap in the opening roll: it used to be generated the instant the room's creator opened it, before an opponent had joined, and Restart wasn't gated by opponent presence either — so the creator could sit alone in the room and hit Restart repeatedly, re-rolling the opening dice each time, and stop once one favored them, with nobody there yet to notice. The opening roll is now only generated once both seats are claimed, and Restart/Play Again are disabled (and no-op if triggered anyway) until then.
+
+Testing turned up two real gaps this session: fuzzing `rules.js` (400 random games plus an exhaustive two-dice search, invariant-clean otherwise) found two unenforced dice-obligation rules, logged rather than fixed (see Future Improvements); and driving the actual UI found that points and the bar had the exact same unbounded-pile problem the bear-off tray was fixed for earlier, just never noticed because the standard starting position (5 per point, nothing on the bar) happens to be small enough to hide it. Six or more on a point, or several checkers sent to the bar at once, are both routine mid-game outcomes, not edge cases — past that, two adjacent stacks used to visually merge into one indistinguishable column. Points and the bar now get the identical treatment `MAX_VISIBLE_OFF` already gave the bear-off tray: render only as many whole checkers as fit, show the true count in a badge (`.point-count`, `.bar-count`) once it's needed. Points specifically needed a second, lower cap for once the badge itself is showing (`MAX_VISIBLE_PER_POINT_WITH_BADGE`) — getting that backwards during development capped the *standard opening position itself*, a bug worth flagging for the next round of work like this: measure the count-plus-badge case before assuming a single threshold covers both.
+
+Also added `run-tests.js`, a `jsc`-based runner alongside `tests.html` for the flaky-browser-tab workaround CLAUDE.md's Tests section already described but never had a script for.

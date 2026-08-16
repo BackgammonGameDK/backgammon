@@ -517,8 +517,11 @@ body {
 .bar {
   width: var(--tray-width);
   flex-shrink: 0;
+  max-height: 100%;
+  overflow: hidden;
   background: #2e1a0e;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -529,6 +532,35 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 4px;
+}
+
+/* Same treatment as .off-count below (script.js caps how many checkers
+   .bar-checkers actually renders - see MAX_VISIBLE_BAR), for the same
+   reason: several checkers can land on the bar at once (multiple hits
+   before anyone re-enters), and it's exactly as narrow a tray as .off. */
+.bar-count {
+  flex-shrink: 0;
+  margin-top: 2px;
+  min-width: 16px;
+  padding: 1px 3px;
+  border-radius: 999px;
+  background: #f5f5f0;
+  border: 1px solid #333;
+  color: #222;
+  font-size: 10px;
+  font-weight: bold;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.bar-count[data-owner="black"] {
+  background: #222;
+  border: 1px solid #666;
+  color: #eee;
+}
+
+.bar-count:empty {
+  display: none;
 }
 
 .off {
@@ -595,6 +627,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  overflow: hidden;
 }
 
 /* The triangle is drawn on a background layer, not on .point itself,
@@ -633,6 +666,40 @@ body {
 
 .point.even::before {
   background: #f0d9b5;
+}
+
+/* Same treatment as .off-count/.bar-count (script.js caps how many
+   checkers a point actually renders - see MAX_VISIBLE_PER_POINT) - a
+   built-up point (a prime, a heavy stack under attack) is routine
+   mid-game, unlike the off tray/bar. Appended as an extra child after
+   the (capped) real checkers, rather than a dedicated sibling container
+   like .off-count/.bar-count get: .point has no such wrapper, checkers
+   are its direct children. z-index above .point::before like .checker
+   already is, since it renders over the triangle the same way. Colored
+   per the point's own checkers (a class script.js sets, not a fixed
+   tray side) rather than .off-count/.bar-count's owner-based variant,
+   since either color can occupy any point. */
+.point-count {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  margin: 2px 0;
+  min-width: 16px;
+  padding: 1px 3px;
+  border-radius: 999px;
+  background: #f5f5f0;
+  border: 1px solid #333;
+  color: #222;
+  font-size: 10px;
+  font-weight: bold;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.point-count.black {
+  background: #222;
+  border: 1px solid #666;
+  color: #eee;
 }
 
 .point.invalid-target,

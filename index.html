@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=30">
+  <link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -54,8 +54,9 @@
         <div class="point point-down even" data-point="18"></div>
       </div>
 
-      <div class="bar">
+      <div class="bar" data-owner="white">
         <div class="bar-checkers"></div>
+        <div class="bar-count" data-owner="white"></div>
       </div>
 
       <div class="quadrant">
@@ -83,8 +84,9 @@
         <div class="point point-up odd" data-point="7"></div>
       </div>
 
-      <div class="bar">
+      <div class="bar" data-owner="black">
         <div class="bar-checkers"></div>
+        <div class="bar-count" data-owner="black"></div>
       </div>
 
       <div class="quadrant">
@@ -113,10 +115,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=30"></script>
-  <script src="qrcode-generator.js?v=30"></script>
-  <script src="rules.js?v=30"></script>
-  <script src="sync.js?v=30"></script>
-  <script src="script.js?v=30"></script>
+  <script src="firebase-config.js?v=33"></script>
+  <script src="qrcode-generator.js?v=33"></script>
+  <script src="rules.js?v=33"></script>
+  <script src="sync.js?v=33"></script>
+  <script src="script.js?v=33"></script>
 </body>
 </html>

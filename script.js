@@ -59,6 +59,11 @@ const offCountEls = {
   black: document.querySelector('.off-count[data-owner="black"]'),
 };
 
+const barCountEls = {
+  white: document.querySelector('.bar-count[data-owner="white"]'),
+  black: document.querySelector('.bar-count[data-owner="black"]'),
+};
+
 /* How many checkers the off tray actually renders, regardless of how many
    are really borne off - .off-count (see renderOffCounts) carries the true
    number past this point. The count badge sits below the checkers as a
@@ -71,6 +76,32 @@ const offCountEls = {
    per-breakpoint value to avoid coupling this file to style.css's exact
    media query breakpoints. */
 const MAX_VISIBLE_OFF = 4;
+
+/* Same idea as MAX_VISIBLE_OFF, for the bar - .bar-count carries the true
+   count past this point. Measured the same way, at the same 375px
+   viewport. A separate constant from MAX_VISIBLE_OFF on principle (the
+   bar and the off tray happen to be the same width, but nothing ties
+   their measurements together - if either tray's own sizing changes,
+   only that one needs re-measuring). */
+const MAX_VISIBLE_BAR = 4;
+
+/* Same idea again, for a point - .point-count (appended after the capped
+   checkers, see renderOverflowBadges) carries the true count past this
+   point. Unlike the off tray/bar, a point's badge is only shown once it's
+   actually needed (renderOverflowBadges), not from the first checker -
+   with 24 points and most holding a handful in routine play, an
+   always-on badge would be mostly clutter rather than the rare exception
+   .off-count/.bar-count are. That makes this two numbers, not one: 5
+   checkers alone fit a point at 375px with a few px to spare - matches
+   the standard opening position's own max stack, presumably not a
+   coincidence, and confirms 5 shouldn't need a badge at all - but adding
+   the badge's own height on top of a 5th checker overflows, so once a
+   point does need one (6+), only 4 checkers fit alongside it. Getting
+   this backwards (capping at 4 unconditionally) was a real bug caught in
+   testing: it cropped the standard starting position itself, showing
+   "4 + badge" on every point that opens at 5. */
+const MAX_VISIBLE_PER_POINT = 5;
+const MAX_VISIBLE_PER_POINT_WITH_BADGE = 4;
 
 let state = createInitialState();
 let selectedFrom = null;
@@ -147,11 +178,16 @@ function desiredLayout() {
 
   for (let n = 1; n <= 24; n++) {
     const point = state.points[n];
-    layout.set(pointElement(n), point ? { color: point.color, count: point.count } : { color: null, count: 0 });
+    const visibleCount = point
+      ? point.count > MAX_VISIBLE_PER_POINT
+        ? MAX_VISIBLE_PER_POINT_WITH_BADGE
+        : point.count
+      : 0;
+    layout.set(pointElement(n), { color: point ? point.color : null, count: visibleCount });
   }
 
-  layout.set(barContainers.white, { color: 'white', count: state.bar.white });
-  layout.set(barContainers.black, { color: 'black', count: state.bar.black });
+  layout.set(barContainers.white, { color: 'white', count: Math.min(state.bar.white, MAX_VISIBLE_BAR) });
+  layout.set(barContainers.black, { color: 'black', count: Math.min(state.bar.black, MAX_VISIBLE_BAR) });
   layout.set(offContainers.white, { color: 'white', count: Math.min(state.off.white, MAX_VISIBLE_OFF) });
   layout.set(offContainers.black, { color: 'black', count: Math.min(state.off.black, MAX_VISIBLE_OFF) });
 
@@ -208,6 +244,40 @@ function renderCheckers() {
 function renderOffCounts() {
   offCountEls.white.textContent = state.off.white > 0 ? state.off.white : '';
   offCountEls.black.textContent = state.off.black > 0 ? state.off.black : '';
+}
+
+/* Bar counts work exactly like the off tray (see renderOffCounts above) -
+   a dedicated badge element that's always present, just toggled empty.
+   Points don't have one: with 24 of them, and most holding a handful of
+   checkers that fit fine, a permanent badge on every point would be
+   mostly-empty clutter rather than the rare exception .off-count/
+   .bar-count are. So a point's badge is created only once it's actually
+   needed (count > MAX_VISIBLE_PER_POINT) and removed once it isn't -
+   the same reconcile-to-match-the-state approach renderCheckers takes
+   with checkers themselves, just for this one extra element per point.
+   Appended after renderCheckers runs, so it lands after the (already
+   capped) real checkers - see MAX_VISIBLE_PER_POINT's comment for why
+   that positions it correctly for both point orientations. */
+function renderOverflowBadges() {
+  barCountEls.white.textContent = state.bar.white > 0 ? state.bar.white : '';
+  barCountEls.black.textContent = state.bar.black > 0 ? state.bar.black : '';
+
+  for (let n = 1; n <= 24; n++) {
+    const point = state.points[n];
+    const element = pointElement(n);
+    const existing = element.querySelector('.point-count');
+
+    if (point && point.count > MAX_VISIBLE_PER_POINT) {
+      const badge = existing || document.createElement('div');
+      badge.className = `point-count ${point.color}`;
+      badge.textContent = point.count;
+      if (!existing) {
+        element.appendChild(badge);
+      }
+    } else if (existing) {
+      existing.remove();
+    }
+  }
 }
 
 function createDie(die, usable) {
@@ -316,6 +386,7 @@ function renderSelection() {
 function render() {
   renderCheckers();
   renderOffCounts();
+  renderOverflowBadges();
   renderDice();
   renderStatus();
   renderSelection();
