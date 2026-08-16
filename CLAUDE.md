@@ -93,7 +93,15 @@ Two players share one game via a room record at `/rooms/<code>` in Firebase Real
 
 `tests.html` loads its scripts with a cache-busting timestamp appended to the URL, because plain `<script src>` tags can serve a stale cached copy over `file://` in some sandboxed browser tooling even after the file on disk has changed — if you ever see a test result that doesn't match a change you just made, suspect this before suspecting the code, and try a hard reload or a `fetch()` + `eval()` of the file's current contents to rule it out.
 
-Running `tests.html` inside a sandboxed/automated browser tab (as opposed to a normal foregrounded tab) can produce flaky failures in the async `sync.js` tests that have nothing to do with the code: a backgrounded tab (`document.hidden === true`) gets Chrome's aggressive background-timer throttling, which can push a test's `waitFor` past its budget purely from scheduling delay. Confirm before suspecting a real bug — reproduce the same failures against an unmodified checkout (e.g. `git stash`) first, and if you need a clean, fast, non-flaky run, execute the three files directly under a real JS engine outside the browser (macOS ships `jsc` at `/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc`; stub `document`/`sessionStorage`/`firebase`/`window` and eval `rules.js` + `sync.js` + `tests.js` in sequence).
+Running `tests.html` inside a sandboxed/automated browser tab (as opposed to a normal foregrounded tab) can produce flaky failures in the async `sync.js` tests that have nothing to do with the code: a backgrounded tab (`document.hidden === true`) gets Chrome's aggressive background-timer throttling, which can push a test's `waitFor` past its budget purely from scheduling delay. Confirm before suspecting a real bug — reproduce the same failures against an unmodified checkout (e.g. `git stash`) first, or just sidestep the whole issue with `run-tests.js` (below).
+
+`run-tests.js` runs the same suite under `jsc` (macOS's command-line JavaScriptCore, no browser involved) instead of `tests.html`, for a clean, fast, non-flaky result whenever you need to double-check a `tests.html` run:
+
+```bash
+/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc run-tests.js
+```
+
+Run from the repo root, since `load()` resolves `rules.js`/`sync.js`/`tests.js` relative to cwd. It stubs `document`/`sessionStorage`/`firebase`/`window` (jsc has none of them) plus a minimal virtual-time `setTimeout`/`Date.now` (jsc has no timers at all, and the suite's `waitFor` needs them), then reports the same pass/fail summary `tests.html` would, exiting non-zero on any failure so it's usable as a pre-commit check. If a change to `rules.js`/`sync.js`'s shape ever breaks one of these stubs, the failure mode is a hang followed by "NO RESULTS", not a wrong pass/fail count.
 
 ## Where things are documented
 
