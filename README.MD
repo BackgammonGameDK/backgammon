@@ -84,6 +84,28 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      every room update; `commitState`'s hot-seat branch doesn't, leaving it
      to each caller. Every current caller does, so nothing is broken today,
      but it's an easy trap for a future one.
+4. **Two standard backgammon "obligation" rules aren't enforced** — found by
+   fuzzing `rules.js` directly (400 random games plus an exhaustive search
+   over two-dice positions), not the manual playtest above. `isMoveLegal`
+   validates a move in isolation; it never checks whether a *better*
+   sequence was available this turn, so a player can knowingly waste a die.
+   Two confirmed cases:
+   - **Must use both dice if any order lets you.** White with dice `[6,1]`
+     and checkers on 2 and 17 can play `17→16` (stranding the 6 - `10` is
+     blocked and `2` can't bear off) instead of `17→11, 2→1` (uses both).
+     The engine accepts the first.
+   - **Must play the higher die if only one can be played at all.** Black
+     with dice `[6,4]` and a lone mobile checker on 9 can play the 4
+     (`9→13`) even though standard rules require the 6 (`9→15`) once only
+     one of the two can be used this turn. The engine accepts the 4.
+
+   Both need a one-turn lookahead over legal move sequences (small
+   branching factor, cheap) rather than judging each move on its own -
+   `applyMove` already returns a fresh state for exactly this kind of
+   exploration, so the search doesn't need new plumbing. Skippable if not
+   worth the complexity: this is friend-level trust software (see
+   Multiplayer below) between two people already sharing a room code, and
+   plenty of casual implementations don't enforce this either.
 
 ## Architecture
 
