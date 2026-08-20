@@ -180,6 +180,36 @@ The page loads its scripts with a cache-busting timestamp, because browsers
 cache aggressively over `file://` and will otherwise re-run the previous
 version of the code.
 
+`run-tests.js` runs the same suite from the command line under `jsc`, with no
+browser involved — worth preferring when a `tests.html` run gives a result that
+looks wrong, since a backgrounded browser tab can fail async tests purely from
+timer throttling. The `run-tests` skill (below) wraps it.
+
+## Skills
+
+Three skills under `.claude/skills/` automate the project's own routines, so
+they're one command instead of something to remember at the moment you're least
+likely to. Each is a short description file plus a shell script holding the real
+logic, so any of them can also be run directly:
+
+```bash
+bash .claude/skills/ship-check/scripts/check.sh
+```
+
+- **`run-tests`** — runs the suite the reliable way (the `jsc` path above).
+- **`cache-bust-check`** — catches the mistake of editing a versioned asset
+  without bumping `index.html`'s `?v=N` tags. That mistake shipped a stale
+  `sync.js` once and a stale `style.css` later, and both times it was invisible
+  until someone with a warm browser cache hit it.
+- **`ship-check`** — the pre-push gate: runs the two above, checks that no DOM
+  reference has leaked into `rules.js` (see Architecture), and warns if code
+  the docs describe changed without the docs changing too. That last one only
+  warns, never blocks, because whether a doc has actually gone stale is a
+  judgement call a script can't make for you.
+
+These are conveniences layered on top of the project, not part of it — the game
+itself still has no build step and no dependencies.
+
 ## Status
 ✅ Core build plan complete — stages 1-7 (including 5a and 5b) are all done: static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off, win detection, and restart. The game is fully playable end to end.
 
@@ -212,3 +242,5 @@ Closed a fairness gap in the opening roll: it used to be generated the instant t
 Testing turned up two real gaps this session: fuzzing `rules.js` (400 random games plus an exhaustive two-dice search, invariant-clean otherwise) found two unenforced dice-obligation rules, logged rather than fixed (see Future Improvements); and driving the actual UI found that points and the bar had the exact same unbounded-pile problem the bear-off tray was fixed for earlier, just never noticed because the standard starting position (5 per point, nothing on the bar) happens to be small enough to hide it. Six or more on a point, or several checkers sent to the bar at once, are both routine mid-game outcomes, not edge cases — past that, two adjacent stacks used to visually merge into one indistinguishable column. Points and the bar now get the identical treatment `MAX_VISIBLE_OFF` already gave the bear-off tray: render only as many whole checkers as fit, show the true count in a badge (`.point-count`, `.bar-count`) once it's needed. Points specifically needed a second, lower cap for once the badge itself is showing (`MAX_VISIBLE_PER_POINT_WITH_BADGE`) — getting that backwards during development capped the *standard opening position itself*, a bug worth flagging for the next round of work like this: measure the count-plus-badge case before assuming a single threshold covers both.
 
 Also added `run-tests.js`, a `jsc`-based runner alongside `tests.html` for the flaky-browser-tab workaround CLAUDE.md's Tests section already described but never had a script for.
+
+Most recently, three of the project's recurring manual routines became skills (see Skills above): running the tests the reliable way, checking the `?v=N` cache-busting bump, and a combined pre-push gate over both plus `rules.js`'s no-DOM rule. The pattern each one addresses is the same — the docs already explained the rule and *why* it mattered, having been written after the bug that taught it, but explaining a rule and enforcing it are different things, and the moment you most need the reminder is the one where you're least likely to go re-read a paragraph about it. The pre-push gate also warns when code the docs describe changes without the docs changing too; it deliberately only warns, since a script can spot the omission but can't judge whether the docs actually went stale. `.claude/` is tracked in git now so these travel with the repo, with the two machine-specific files inside it ignored instead.
