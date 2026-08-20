@@ -1,3 +1,8 @@
-.claude/
 firebase-debug.log
 .firebase/
+.DS_Store
+
+# Local-only Claude Code files. .claude/ itself is tracked (the skills live
+# there), but these two hold machine-specific paths and permissions.
+.claude/launch.json
+.claude/settings.local.json
