@@ -739,6 +739,10 @@ function handleRoomUpdate(room, color) {
 function startOnline(roomCode) {
   currentRoomCode = roomCode;
   leaveStartScreen();
+  /* Tells style.css this game has a room status row to make space for.
+     Without it .online-area is hidden and the board claims that height
+     instead (see --online-row). */
+  document.body.classList.add('online');
   roomStatusEl.hidden = false;
   onlineRoom = joinRoom(roomCode, { onRoom: handleRoomUpdate });
 }

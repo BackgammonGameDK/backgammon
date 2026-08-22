@@ -167,8 +167,8 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      controls out of `.dice-area` left `.online-area` holding only
      `#room-status`, which measures the same height the old
      `#pre-join-area` row did, so `--chrome` is unchanged and still right
-     for online play — but a hot-seat game now leaves that row empty and
-     has ~30px of slack it could grow into (see item 6).
+     for online play — but a hot-seat game now leaves that row empty, and
+     the slack it left was reclaimed in a follow-up (see Status).
    - **5c. Exit to the start screen.** A button that leaves the current game
      and returns to 5b's screen, clearing the room from the URL. Depends on
      5b for a destination. Once 5a is in, this is a deliberate "I am done
@@ -210,14 +210,6 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    - **Undo the last move within a turn.** Mis-taps are common on a
      phone-sized board. `applyMove` never mutates its input, so a per-turn
      stack of prior states is straightforward.
-   - **A mode-aware `--chrome`.** Since 5b moved the join controls to the
-     start screen, `.online-area` is empty during a hot-seat game and
-     holds `#room-status` during an online one — a ~30px difference at the
-     ≥901px breakpoint. `--chrome` is one hand-measured constant per
-     breakpoint, measured against the taller (online) case so the board
-     can never overrun, which leaves a hot-seat board ~44px narrower than
-     it could be. Buying that back means a second measured number at every
-     breakpoint; worth doing only if the slack becomes noticeable.
    - **Room lifecycle.** Nothing ever deletes `/rooms/<code>`, so rooms
      accumulate indefinitely. Not urgent at friend scale, but recording a
      `lastActive` timestamp now is what would make cleanup possible later —
@@ -336,6 +328,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+The hot-seat board then grew by 57px (~9%) at desktop sizes. `--chrome`, the board's vertical budget, is measured against the tallest state the layout takes — an online game, where `.online-area` holds the room status row — so that the board can never overrun the viewport. A hot-seat game has no room status, so that row is now hidden outright, and `--online-row` (measured per breakpoint, the same by-hand way `--chrome` is) is added back to the budget for hot-seat only. Landscape phones deliberately reclaim nothing, since there the chrome sits *beside* the board and its height was never part of the budget at all. The board's bottom edge lands in the same place in both modes, which is what confirms the reclaimed figure is exactly right rather than merely bigger.
 
 The game now opens on a start screen — play on this device, start an online game, or join one by code — instead of dropping straight into a hot-seat game with "Play Online" buried among the in-game buttons. Nothing is rolled until a mode is chosen: the board behind the screen is a backdrop with no dice, and picking a mode is what creates the real state, so the first dice you see are ones your own choice produced. An invite link or QR scan carrying `#room=` skips the screen entirely and opens straight into the game.
 
