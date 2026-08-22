@@ -320,6 +320,51 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    matches and never rolls blocks the game, so matchmaking would need a
    turn timeout — something the app has nowhere else.
 
+
+8. Further ideas noted once the onboarding work (item 5) was finished and the
+   game had been played through properly. Independent of each other.
+   - **Confirm before Restart — arguably a defect, not a feature.** One tap
+     wipes the game for *both* players, either player can do it at any time,
+     and nothing asks. On a phone that is one mis-tap from destroying a game
+     in progress, and it got riskier when Exit was added beside it: Exit is
+     recoverable (the start screen offers the room back, see 5d) but Restart
+     is not. A confirmation step, or an undo window, on Restart specifically.
+   - **A connection indicator.** If a phone loses signal mid-game nothing
+     says so — moves simply fail to broadcast, silently. `sync.js` already
+     watches `.info/connected` for presence, so surfacing "offline —
+     reconnecting" is mostly a matter of exposing something that is already
+     observed. Aimed at the same mobile-online situation item 5 came out of.
+   - **Gammon and backgammon scoring, and match play.** Every win is
+     currently worth the same and the game simply ends. Standard backgammon
+     scores a gammon double (the loser has borne off nothing) and a
+     backgammon triple (they also still have a checker on the bar or in the
+     winner's home), and is played to a target score rather than a single
+     game. This is pure `rules.js` work — the shape that file is built for,
+     and straightforwardly unit-testable — and it is probably the largest
+     remaining gap between this and a real backgammon game. Distinct from the
+     doubling cube, which is deliberately out of scope.
+   - **Flip the board in hot-seat too.** A rotate control, so two people
+     sitting opposite each other at one tablet can each play from their own
+     side. The machinery already exists — `setBoardPerspective` is a single
+     class toggle — so this is mostly a question of where the control lives
+     and whether it should persist.
+   - **A move log.** A compact record of recent turns ("Black 13→7, 8→7").
+     It would quietly settle three of item 3's findings at once — no hit
+     announcement, the skip message vanishing along with the reason for it,
+     and the general "what just happened?" problem online, where the board
+     changes with no account of why.
+   - **Persist a hot-seat game across a reload.** Online games survive
+     because Firebase holds the state; a hot-seat game lives only in memory
+     and dies on refresh. `state` is already JSON-serializable, so this is
+     `localStorage` plus a decision about when to clear it.
+
+   Also noted while building the "your turn" tab-title cue (item 6): the
+   **Notifications API** is the only thing that would actually reach a phone
+   whose browser is in the background, which the title cannot do. It needs a
+   permission prompt and, on iOS, the site installed to the home screen as a
+   PWA — a real feature rather than a tweak, worth reaching for only if the
+   title proves too quiet in practice.
+
 ## Architecture
 
 `rules.js` holds the game state and every rule, as pure functions over a plain
