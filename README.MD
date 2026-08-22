@@ -235,10 +235,17 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      boards differ. Done with flex ordering rather than a transform on
      purpose: a `scaleY(-1)` would invert the coordinate space the FLIP move
      animation measures in and mirror the count badges' text.
-   - **A "your turn" cue for a backgrounded tab.** Playing online on a phone
-     gives no signal at all that the opponent has moved. A `document.title`
-     change (and optionally `navigator.vibrate`) is cheap and aimed squarely
-     at the same mobile-online situation item 5 came out of.
+   - ~~**A "your turn" cue for a backgrounded tab.**~~ ✅ Done, via
+     `document.title` — which now reads "● Your turn — Backgammon" (or
+     "● Your roll" during the opening) whenever the game is waiting on you.
+     The `navigator.vibrate` half of the idea turned out to be a dead end:
+     the spec has vibration ignored while the document is hidden, which is
+     exactly the case worth signalling. The Notifications API would reach a
+     backgrounded phone properly, but wants a permission prompt and an
+     installed PWA on iOS — left for later if the title proves too quiet.
+     Note the title's own limit: a browser that discards a backgrounded tab
+     stops running the page, so this helps while you are briefly in another
+     app, not when you return the next day.
    - **Undo the last move within a turn.** Mis-taps are common on a
      phone-sized board. `applyMove` never mutates its input, so a per-turn
      stack of prior states is straightforward.
@@ -426,6 +433,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+The tab title now carries the turn, too: while a game is waiting on you it reads "● Your turn — Backgammon", or "● Your roll" during the opening, and goes back to plain once you have played. It is written on every render rather than only when the tab is hidden — a title is a status indicator, not a notification, so it says what is true and clears itself when the turn passes. Vibration was considered and dropped, being ignored by the browser precisely while the document is hidden.
 
 Black now sees the board from their own side online. Backgammon is played across a board — the player opposite has their home board bottom-right and moves toward it — but Black had been playing on White's layout, moving "upward" toward a home board in the far corner. A class on `.board` swaps the two rows for a client seated as Black, which produces the entire mirror at once: home bottom-right, bear-off tray beside it, bar in the row they re-enter into, and their back checkers top-right. The rules never learn about it — both players' state stays byte-identical while their screens differ, so a move means the same point on both sides. It is done by reordering rather than by rotating the board, because a transform would invert the coordinate space the checker-slide animation measures in and mirror the count badges' text along with everything else.
 

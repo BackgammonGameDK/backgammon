@@ -140,6 +140,9 @@ let roomDetailsOpen = false;
    (e.g. a routine online sync) would immediately show it again. Reset to
    null on restart. */
 let celebrationShownFor = null;
+/* Read rather than hardcoded, so the cue composes with whatever the page
+   is actually called. */
+const BASE_TITLE = document.title;
 
 function pointElement(pointNumber) {
   return document.querySelector(`.point[data-point="${pointNumber}"]`);
@@ -401,6 +404,58 @@ function openingStatusText() {
     : `White rolled ${white} — Black, roll`;
 }
 
+/* Whether the game is currently waiting on this client to do something.
+   Not the same as "it's my turn": during the opening both players may act
+   at once, and what's owed is a die rather than a move. Returns the words
+   for the cue, or null when nothing is owed. */
+function titleCue() {
+  if (!onlineRoom || onlineColor === 'spectator' || state.winner) {
+    return null;
+  }
+  const other = onlineColor === 'white' ? 'black' : 'white';
+  if (!(latestRoom && latestRoom.seats && latestRoom.seats[other])) {
+    /* Nobody to play against yet, so nothing is owed - the room status
+       line already says what's happening. */
+    return null;
+  }
+  if (state.phase === 'opening') {
+    return state.openingRoll[onlineColor] === null || isOpeningTie(state) ? 'Your roll' : null;
+  }
+  return state.currentPlayer === onlineColor ? 'Your turn' : null;
+}
+
+/* Playing online on a phone otherwise gives no sign at all that the
+   opponent has moved: you switch to another app, and the only way back to
+   the game is to go and look. The tab's title is the one channel a page
+   still has once it isn't the thing on screen.
+
+   Written on every render rather than only when the tab is hidden, and
+   with no visibilitychange listener: a title is a status indicator, not a
+   notification, so it should simply say what's true. That also removes a
+   whole class of edge case - no "was it hidden when this arrived?" to get
+   wrong, and it clears itself when the turn passes rather than when you
+   happen to look.
+
+   The marker leads, because a tab strip truncates from the right and the
+   end of the title is the first thing to go.
+
+   Two things this deliberately does not do. navigator.vibrate is useless
+   here: the spec has it ignored outright while the document is hidden,
+   which is precisely the case worth signalling. And the Notifications API
+   would genuinely reach a backgrounded phone, but it needs a permission
+   prompt and, on iOS, an installed PWA - a different size of feature than
+   this. Worth reaching for only if the title proves too quiet.
+
+   Its real limit, worth knowing before trusting it: a mobile browser that
+   discards a backgrounded tab stops running this page altogether, so no
+   title update happens either. This helps while you're briefly in another
+   app, not when you come back the next day - which is what seat recovery
+   (sync.js) is for. */
+function renderDocumentTitle() {
+  const cue = titleCue();
+  document.title = cue ? `● ${cue} — ${BASE_TITLE}` : BASE_TITLE;
+}
+
 function renderStatus() {
   const turnText = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
   if (state.phase === 'opening') {
@@ -505,6 +560,7 @@ function renderSelection() {
 }
 
 function render() {
+  renderDocumentTitle();
   renderCheckers();
   renderOffCounts();
   renderOverflowBadges();
