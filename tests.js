@@ -748,7 +748,7 @@ test('sending a state update does not clobber the other seat\'s presence', async
 
 /* ---- sync.js: seat recovery after a discarded tab (stage 5a) ----
  *
- * A tab's identity lives in sessionStorage (clientIdFor), which is what
+ * A tab's identity lives in sessionStorage (identityFor), which is what
  * lets two tabs on one machine hold both seats - but mobile browsers
  * discard a backgrounded tab along with its sessionStorage. The tab that
  * comes back a day later rejoins under a brand new id, finds both seats
