@@ -887,6 +887,55 @@ body {
   z-index: 0;
 }
 
+/* Black's point of view (see setBoardPerspective in script.js). Backgammon
+   is played across a board, so the player sitting opposite sees their own
+   home board bottom-right and moves toward it, exactly as White does here
+   by default. Swapping the two rows produces precisely that: Black's home
+   (19-24) lands bottom-right, their bear-off tray beside it, their bar in
+   the row they re-enter into, and point 1 - where their back checkers
+   start - top-right. The horizontal order inside each quadrant is already
+   correct and must not change.
+
+   Done with flex ordering rather than a transform on purpose. A
+   `scaleY(-1)` or `rotate(180deg)` would give the same picture, but it
+   inverts the coordinate space that animateMove's FLIP measurement works
+   in, so every checker would slide the wrong way vertically - and it would
+   mirror the count badges' text as well. Reordering costs nothing and
+   leaves both alone.
+
+   The rules are untouched: rules.js still numbers points 1-24 absolutely
+   and knows nothing about who is looking. This is the whole of the
+   feature - a class on .board and the four rules below. */
+.board.black-perspective {
+  flex-direction: column-reverse;
+}
+
+/* With the rows swapped, each point is now on the opposite edge of the
+   board, so its triangle has to point the other way and its checkers have
+   to stack from the other end - which is to say each class takes on the
+   other's styling. The badge follows automatically: renderOverflowBadges
+   appends it last, and last-in-flex-order is the point's narrow tip in
+   both directions. */
+.board.black-perspective .point-down::before {
+  clip-path: polygon(0 100%, 100% 100%, 50% 0);
+}
+
+.board.black-perspective .point-down {
+  flex-direction: column-reverse;
+  padding-top: 0;
+  padding-bottom: var(--point-pad);
+}
+
+.board.black-perspective .point-up::before {
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.board.black-perspective .point-up {
+  flex-direction: column;
+  padding-bottom: 0;
+  padding-top: var(--point-pad);
+}
+
 .point-down::before {
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
