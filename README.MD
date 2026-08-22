@@ -109,6 +109,92 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    Multiplayer below) between two people already sharing a room code, and
    plenty of casual implementations don't enforce this either.
 
+5. **Onboarding and session recovery**, planned in stages. Prompted by playing
+   the deployed game on a phone: a first-time visitor lands mid-hot-seat-game
+   with dice already rolled and no signal that online play exists; an online
+   game's first roll arrives pre-rolled rather than being something either
+   player did; and coming back to a room after leaving the browser for a day
+   leaves you unable to play in it, with no way out except hand-editing the
+   room code off the end of the URL — cumbersome on a phone, which is where it
+   happens. The stages below are ordered so each one has somewhere to put the
+   next: 5a is an independent live bug, 5b creates the screen 5c and 5d need
+   to exit and return to, and 5e is the largest change and wants the mode
+   choice from 5b to already exist.
+
+   - **5a. Reclaim a seat after a mobile tab is discarded.** A tab's identity
+     lives in `sessionStorage` (`clientIdFor`, `sync.js`), which mobile
+     browsers discard along with a backgrounded tab. Returning later rejoins
+     with a fresh client id, finds both seats still held by the old ids (a
+     seat is deliberately never freed), and is demoted to spectator — at
+     which point `blockedOnline()` blocks everything and the room looks dead.
+     Keep `sessionStorage` as the primary identity (it is what lets two tabs
+     on one machine hold both seats, and that is the whole reason it was
+     chosen over `localStorage` — see Architecture), but also write a
+     recovery copy to `localStorage` keyed by room code. On a join that finds
+     `sessionStorage` empty, offer the recovered id to the seat-claiming
+     transaction as a *candidate*, to be adopted only if that seat currently
+     has no presence entry. That distinguishes the two cases correctly: a
+     player returning a day later reclaims their seat because their old
+     presence is long gone, while a second tab opened on the same machine
+     does not steal seat one, because that tab is still connected. Testable
+     against the existing in-memory database fake.
+   - **5b. Start screen as the entry point.** Replace "boot straight into a
+     hot-seat game, with Play Online as one more button in the dice area"
+     with an explicit choice between playing on this device and playing
+     online (create a room, or join by code). Two constraints: a URL that
+     already carries `#room=CODE` must skip the start screen and join
+     directly, or every invite link and QR code gets worse; and
+     `createInitialState()` currently runs at module load in `script.js`,
+     so the opening roll is generated before the player has chosen anything
+     — that has to be deferred until a mode is picked, or the "why are there
+     already dice?" confusion just moves behind one click. The overlay can
+     reuse the `#celebration` pattern rather than introducing a new one.
+   - **5c. Exit to the start screen.** A button that leaves the current game
+     and returns to 5b's screen, clearing the room from the URL. Depends on
+     5b for a destination. Once 5a is in, this is a deliberate "I am done
+     with this game" rather than the recovery mechanism it would otherwise
+     have to be.
+   - **5d. Rejoin the last room from the start screen.** Remember the last
+     room code and offer it as a button on 5b's screen. Falls out of 5a and
+     5c almost for free, and is what actually removes the hand-edit-the-URL
+     step for a returning player.
+   - **5e. Manual opening roll.** `createInitialState()` returns a state that
+     already contains the opening roll and both pre-loaded dice, so neither
+     player ever rolls for the start — fine as a faithful implementation of
+     the standard opening procedure, confusing as the first thing you see in
+     a game you just joined. Make it interactive instead: an opening phase in
+     which each seated player rolls their own die, ties visibly reroll, and
+     the higher roll's turn then begins pre-loaded with both values exactly
+     as it does today. This is the largest of these stages because it adds a
+     genuine new phase to `rules.js`, which ripples into `blockedOnline()`
+     (during the opening phase *both* players must be able to act, not only
+     `currentPlayer`), the seeding branch in `handleRoomUpdate`, `renderDice`
+     and the Roll button, and the test suite. It also strengthens the
+     re-roll-until-favorable concern `bothSeatsClaimed` exists for: if each
+     player rolls their own die, neither can re-roll the other's.
+
+6. Further online-play UX, noted during the same review. Independent of each
+   other and of the stages above, listed roughly by value per unit of effort.
+   Separate from the playtest findings in item 3, which are still open too.
+   - **Draw the board from Black's perspective online.** Black currently
+     plays on a board laid out from White's point of view, moving "upward"
+     toward a home board in the top right. Standard implementations orient
+     the board so your own checkers move toward your own home. This is purely
+     a rendering concern — the absolute 1-24 numbering in `rules.js` stays
+     exactly as it is — so it fits the existing state/DOM split cleanly, and
+     it is probably the largest remaining online-play win after item 5.
+   - **A "your turn" cue for a backgrounded tab.** Playing online on a phone
+     gives no signal at all that the opponent has moved. A `document.title`
+     change (and optionally `navigator.vibrate`) is cheap and aimed squarely
+     at the same mobile-online situation item 5 came out of.
+   - **Undo the last move within a turn.** Mis-taps are common on a
+     phone-sized board. `applyMove` never mutates its input, so a per-turn
+     stack of prior states is straightforward.
+   - **Room lifecycle.** Nothing ever deletes `/rooms/<code>`, so rooms
+     accumulate indefinitely. Not urgent at friend scale, but recording a
+     `lastActive` timestamp now is what would make cleanup possible later —
+     and a day-old abandoned room is exactly the case 5a is about.
+
 ## Architecture
 
 `rules.js` holds the game state and every rule, as pure functions over a plain
