@@ -198,7 +198,7 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      landscape phone once the Rejoin button was showing; the landscape
      breakpoint was tightened so the fullest case fits without scrolling
      at 300px of height, below any real phone.
-   - **5e. Manual opening roll.** `createInitialState()` returns a state that
+   - **5e. Manual opening roll.** ✅ Done. `createInitialState()` returned a state that
      already contains the opening roll and both pre-loaded dice, so neither
      player ever rolls for the start — fine as a faithful implementation of
      the standard opening procedure, confusing as the first thing you see in
@@ -212,6 +212,15 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      and the Roll button, and the test suite. It also strengthens the
      re-roll-until-favorable concern `bothSeatsClaimed` exists for: if each
      player rolls their own die, neither can re-roll the other's.
+
+     Built as described. `state.phase` was added rather than deriving the
+     phase from `openingRoll`'s contents, and a tie is deliberately left on
+     screen so both players see the round they lost. The sharpest surprise
+     was serialization: a fresh opening roll is `{ white: null, black:
+     null }`, which Firebase stores as *nothing at all*, so a joining
+     player received a state with no `openingRoll` key — `deserializeState`
+     now puts both keys back explicitly during the opening phase. Three
+     round-trip tests cover it, and disabling the fix fails exactly those.
 
 6. Further online-play UX, noted during the same review. Independent of each
    other and of the stages above, listed roughly by value per unit of effort.
@@ -414,6 +423,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+The opening roll is now the players' to make, completing the original set of three complaints. A fresh game contains no dice at all: each player throws one die, the higher starts, and a tie stays on screen — both dice showing the same number — until somebody rolls again. Online, either player may roll first and each is told about their own die ("You rolled 3 — waiting for your opponent"); hot-seat steps through White then Black on the one shared button. `state.phase` distinguishes the two phases rather than the phase being inferred from the roll's contents. The per-player dice colours arrived just in time to carry this: during the opening you see one white die and one black die side by side, which explains the procedure without a word of instruction.
 
 The dice now take the colour of whoever rolled them — white body with dark pips on White's turn, dark body with light pips on Black's — matching how each player has their own pair in a real set, and giving the turn a second, wordless cue beside the turn indicator. Online that doubles as "is it my turn", since you already know your own colour, and the distinction being pure luminance means it survives any colour vision deficiency (the same reasoning behind the blue/orange move highlights). Two things needed care: a black die is `#222` like a black checker, but a checker sits on the wood board while dice sit on the `#2b2b2b` page, where `#222` is nearly invisible — so the border carries the contrast instead and is lighter than the checker's. And the "spent die" cue is a dim to 35% opacity, which reads clearly on a light die but makes a dark one look absent rather than used, so black dice dim less and keep more of their border.
 

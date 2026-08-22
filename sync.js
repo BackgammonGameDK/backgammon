@@ -280,6 +280,29 @@ function deserializeState(raw) {
   Object.keys(raw.points || {}).forEach((index) => {
     points[Number(index)] = raw.points[index];
   });
+  /* `phase` defaults to playing for any record written before the opening
+     phase existed - there are none that matter, but a state arriving
+     without it should behave like a game in progress rather than sending
+     both players back to roll for the start.
+
+     openingRoll needs more care than a simple `|| null`, and it is the
+     sharpest instance of the null-stripping problem in this file. A fresh
+     opening state's roll is `{ white: null, black: null }`, which Firebase
+     stores as nothing at all - the key is simply absent on read. Half a
+     round (`{ white: 4, black: null }`) comes back as `{ white: 4 }`. So
+     during the opening phase both keys are put back explicitly; rules.js
+     compares them against null and would read a missing key as "not yet
+     rolled" by luck rather than by contract. Outside that phase the value
+     is genuinely null once the first turn ends, and `|| null` is right. */
+  const phase = raw.phase || 'playing';
+  const openingRoll =
+    phase === 'opening'
+      ? {
+          white: raw.openingRoll && raw.openingRoll.white != null ? raw.openingRoll.white : null,
+          black: raw.openingRoll && raw.openingRoll.black != null ? raw.openingRoll.black : null,
+        }
+      : raw.openingRoll || null;
+
   return {
     points,
     bar: raw.bar,
@@ -287,7 +310,8 @@ function deserializeState(raw) {
     dice: raw.dice || [],
     currentPlayer: raw.currentPlayer,
     winner: raw.winner || null,
-    openingRoll: raw.openingRoll || null,
+    phase,
+    openingRoll,
   };
 }
 
