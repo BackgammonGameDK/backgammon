@@ -5,10 +5,10 @@
  * resulting state back into checkers on screen.
  *
  * `state` is the single source of truth - the DOM is derived from it, never
- * read for game logic. `selectedFrom` and `hintsEnabled` are the only other
- * local state; `onlineRoom`/`onlineColor` (see the Online play section
- * below) are local too, in the sense that they describe this tab's
- * connection, not the shared game.
+ * read for game logic. `gameStarted`, `selectedFrom` and `hintsEnabled` are
+ * the only other local state; `onlineRoom`/`onlineColor` (see the Online
+ * play section below) are local too, in the sense that they describe this
+ * tab's connection, not the shared game.
  *
  * Every state change - a move, a roll, ending a turn, a restart - goes
  * through commitState() rather than assigning `state` directly, so that
@@ -20,6 +20,7 @@ const board = document.querySelector('.board');
 const diceContainer = document.querySelector('#dice');
 const rollButton = document.querySelector('#roll-button');
 const restartButton = document.querySelector('#restart-button');
+const exitButton = document.querySelector('#exit-button');
 const gameOverEl = document.querySelector('#game-over');
 const turnIndicator = document.querySelector('#turn-indicator');
 const messageEl = document.querySelector('#message');
@@ -582,6 +583,56 @@ function leaveStartScreen() {
   gameStarted = true;
 }
 
+/* The way back. Tears down whatever kind of game was running and returns
+   to the screen in the state a fresh visit would find it - so leaving and
+   starting again is genuinely a new game, not the old one with the
+   overlay put back over it.
+
+   For an online game it also announces the departure (sync.js's
+   leave({departed}), which the opponent's status line reads) rather than
+   just going quiet. The seat itself is deliberately *not* freed: seats
+   are never released in this design, and 5a's recovery depends on that -
+   coming back to the same room reclaims the same seat rather than finding
+   a stranger in it.
+
+   The room code comes off the URL with replaceState rather than by
+   assigning location.hash, which would leave a bare "#" behind and push a
+   history entry for a screen the player is already looking at. */
+function exitToStartScreen() {
+  if (onlineRoom) {
+    onlineRoom.leave({ departed: true });
+    onlineRoom = null;
+    onlineColor = null;
+    latestRoom = null;
+    currentRoomCode = null;
+    qrRenderedForRoom = null;
+    roomDetailsOpen = false;
+    roomStatusEl.hidden = true;
+    qrPanelEl.hidden = true;
+    document.body.classList.remove('online');
+  }
+
+  history.replaceState(null, '', location.pathname + location.search);
+
+  gameStarted = false;
+  state = idleState();
+  selectedFrom = null;
+  celebrationShownFor = null;
+  celebrationEl.hidden = true;
+  messageEl.textContent = '';
+  /* Both of these are disabled by renderRoomStatus while online and
+     nothing else re-enables them - a hot-seat game started after an exit
+     would otherwise find Restart dead. */
+  restartButton.disabled = false;
+  playAgainButton.disabled = false;
+  startErrorEl.hidden = true;
+  roomCodeInput.value = '';
+  startScreenEl.hidden = false;
+  render();
+}
+
+exitButton.addEventListener('click', exitToStartScreen);
+
 function showStartError(text) {
   startErrorEl.textContent = text;
   startErrorEl.hidden = false;
@@ -675,18 +726,27 @@ function renderRoomStatus(room) {
   const other = onlineColor === 'white' ? 'black' : 'white';
   const seatTaken = onlineColor !== 'spectator' && Boolean(room.seats[other]);
   const otherPresent = seatTaken && Boolean(room.presence && room.presence[other]);
+  /* Set only by the opponent pressing Exit (sync.js's leave({departed})),
+     never by a connection simply dropping - which is the difference
+     between "they quit" and "they might be back in a second". */
+  const otherDeparted = seatTaken && Boolean(room.departed && room.departed[other]);
   const you = onlineColor === 'spectator' ? 'Spectating' : `You are ${onlineColor === 'white' ? 'White' : 'Black'}`;
 
   let status = '';
   if (onlineColor !== 'spectator') {
     if (!seatTaken) {
       status = ' — waiting for opponent…';
+    } else if (otherDeparted) {
+      /* Checked before presence: leaving clears presence too, so an
+         opponent who quit satisfies both conditions and the more
+         specific one has to win. */
+      status = ' — opponent left the game';
     } else if (!otherPresent) {
       status = ' — opponent disconnected';
     }
   }
   roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${status}`;
-  roomStatusEl.classList.toggle('room-status--warning', status === ' — opponent disconnected');
+  roomStatusEl.classList.toggle('room-status--warning', otherDeparted || (seatTaken && !otherPresent));
 
   /* Nothing left to actively report (opponent present and connected, or
      spectating) - the Copy link/QR row isn't needed anymore, so collapse

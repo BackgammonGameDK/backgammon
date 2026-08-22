@@ -460,10 +460,19 @@ body {
   cursor: not-allowed;
 }
 
-#restart-button {
+/* The pair of out-of-the-way controls. Fixed as a unit, so neither takes
+   part in the dice area's flow and neither counts toward --chrome. */
+.corner-controls {
   position: fixed;
   top: 16px;
   right: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+#restart-button,
+#exit-button {
   padding: 6px 14px;
   font-size: 13px;
   color: #ccc;
@@ -473,7 +482,8 @@ body {
   cursor: pointer;
 }
 
-#restart-button:hover {
+#restart-button:hover,
+#exit-button:hover {
   background: #3a3a3a;
   color: #fff;
 }
@@ -1085,7 +1095,7 @@ button,
     font-size: 16px;
   }
 
-  #restart-button {
+  .corner-controls {
     top: 8px;
     right: 8px;
   }
@@ -1208,8 +1218,9 @@ button,
      it eat a mis-tap meant for something else once content drifted too
      close to its old fixed position. Distance is the same guard here,
      just achieved by ordering/spacing instead of position: fixed. */
-  #restart-button {
+  .corner-controls {
     position: static;
+    flex-direction: column;
     margin-top: 18px;
   }
 

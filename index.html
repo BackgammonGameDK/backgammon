@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=36">
+  <link rel="stylesheet" href="style.css?v=37">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -33,7 +33,14 @@
     <div id="message"></div>
     <div id="game-over"></div>
     <div id="rotate-hint">Rotate your device for a bigger board</div>
-    <button id="restart-button">Restart</button>
+    <!-- Both live in one wrapper so they position as a pair. Restart used
+         to be the lone `position: fixed` element here; the wrapper now
+         carries that, including the landscape case where it joins the
+         sidebar's flow instead. -->
+    <div class="corner-controls">
+      <button id="exit-button">Exit</button>
+      <button id="restart-button">Restart</button>
+    </div>
   </div>
 
   <div class="board">
@@ -130,10 +137,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=36"></script>
-  <script src="qrcode-generator.js?v=36"></script>
-  <script src="rules.js?v=36"></script>
-  <script src="sync.js?v=36"></script>
-  <script src="script.js?v=36"></script>
+  <script src="firebase-config.js?v=37"></script>
+  <script src="qrcode-generator.js?v=37"></script>
+  <script src="rules.js?v=37"></script>
+  <script src="sync.js?v=37"></script>
+  <script src="script.js?v=37"></script>
 </body>
 </html>
