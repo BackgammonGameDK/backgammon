@@ -18,10 +18,18 @@
  * same handful of calls (ref/transaction/on/off/set), so the test suite
  * never makes a real network call. `clientId` is the equivalent seam
  * carried over from Stage C, for simulating two different tabs from one
- * test page.
+ * test page, and `recoveredClientId` alongside it stands in for the
+ * localStorage mirror a returning tab reclaims its seat with (see
+ * identityFor) - both are per-tab storage, which can't be faked from a
+ * single test page.
  */
 
 const CLIENT_ID_PREFIX = 'bg:client:';
+
+/* The localStorage half of identityFor below - a mirror of the same id,
+   under a different key so the two stores can never be confused for each
+   other while debugging. */
+const RECOVERY_ID_PREFIX = 'bg:seat:';
 
 /* Short, easy to read aloud or type into a second device. Skips 0/O and
    1/I, which are the pairs people actually mistype. Six characters (up
@@ -40,21 +48,54 @@ function randomRoomCode() {
   return code;
 }
 
-/* A tab's identity within a room, persisted in sessionStorage rather than
-   localStorage. localStorage is shared across every tab of the same
-   origin, so using it here would make two tabs open to the same room
-   collapse into a single "client" unable to hold two seats. sessionStorage
-   is per-tab: a reload of the same tab reclaims the same seat, a second
-   tab gets a different id and can claim the other seat, and closing the
-   tab forgets it. */
-function clientIdFor(roomCode) {
-  const key = CLIENT_ID_PREFIX + roomCode;
-  let id = sessionStorage.getItem(key);
-  if (!id) {
-    id = Math.random().toString(36).slice(2, 10);
-    sessionStorage.setItem(key, id);
+/* A tab's identity within a room, plus the id it means to reclaim a seat
+   under if it turns out to be a tab that lost its identity.
+
+   `clientId` is per-tab and lives in sessionStorage, not localStorage:
+   localStorage is shared across every tab of one origin, so using it as
+   the identity would make two tabs open to the same room collapse into a
+   single "client" unable to hold two seats. sessionStorage is per-tab - a
+   reload of the same tab reclaims the same seat, a second tab gets a
+   different id and can claim the other seat.
+
+   `recoveredClientId` exists because that per-tab guarantee has a cost on
+   mobile: a browser discarding a backgrounded tab throws its
+   sessionStorage away too, so a player returning to a game hours later
+   arrives as a brand-new client, finds both seats still claimed (they are
+   never freed, see claimSeat) and is demoted to spectator - locked out of
+   their own game with no way back except editing the room code off the
+   URL by hand. So the id is *also* mirrored to localStorage, which
+   survives that. When sessionStorage comes up empty, that mirror is
+   offered to claimSeat as a candidate - not as an identity, only as a
+   claim to a seat, which claimSeat honours solely if nobody is currently
+   sitting in it.
+
+   Both halves are one function rather than two on purpose: the mirror has
+   to be read *before* sessionStorage is written, or sessionStorage is
+   never empty and no candidate is ever offered. Split across two calls,
+   getting that order wrong would silently disable seat recovery, and
+   nothing would fail loudly enough to notice.
+
+   Known limitation, accepted: the mirror holds one id per room, the most
+   recent tab's. Two tabs of one browser in the same room, where the first
+   is then discarded, leaves that first tab unable to recover - the mirror
+   has moved on to the second. That's a development and testing shape, not
+   how two people play, and a per-room set of candidates is more machinery
+   than this trust model warrants. */
+function identityFor(roomCode) {
+  const sessionKey = CLIENT_ID_PREFIX + roomCode;
+  const recoveryKey = RECOVERY_ID_PREFIX + roomCode;
+
+  let clientId = sessionStorage.getItem(sessionKey);
+  const recoveredClientId = clientId ? null : localStorage.getItem(recoveryKey);
+
+  if (!clientId) {
+    clientId = Math.random().toString(36).slice(2, 10);
+    sessionStorage.setItem(sessionKey, clientId);
   }
-  return id;
+  localStorage.setItem(recoveryKey, clientId);
+
+  return { clientId, recoveredClientId };
 }
 
 function emptyRoom() {
@@ -68,16 +109,39 @@ function emptyRoom() {
    deliberate simplification for a two-player game under friend-level
    trust, not a general presence system.
 
+   `recoveredClientId` (optional, see identityFor) is a claim to a seat
+   held under a previous identity, for a tab whose sessionStorage was
+   discarded. It is honoured only when that seat has no presence entry -
+   which is the whole reason presence has to be consulted here rather than
+   just trusting the candidate. Two situations produce an identical room
+   record apart from presence: a player returning to a seat nobody is
+   sitting in, and a second tab opening alongside a live one, since
+   localStorage is shared origin-wide and the second tab finds the first
+   tab's mirrored id too. Presence is the only thing that tells them
+   apart, so the rule is "reclaim an abandoned seat, never occupy a live
+   one" - and a candidate holding no seat at all is simply ignored, so a
+   stale or invented one can't become a way to take a seat off somebody.
+
+   Checked after the two identity cases above but before the empty-seat
+   cases below: a client that already holds a seat under its own id needs
+   no recovery, while a client that is recovering must land back in its
+   own seat rather than whichever one happens to be free.
+
    Mutates room.seats in place. Used as the body of a Firebase transaction,
    which may run it more than once under contention - safe here because
    each retry gets a fresh `room` (transaction always hands us `current ||
    emptyRoom()`, never something we mutated on a previous attempt), and the
    function has no effect outside of what it returns. */
-function claimSeat(room, clientId) {
+function claimSeat(room, clientId, recoveredClientId) {
   if (room.seats.white === clientId) {
     return room;
   }
   if (room.seats.black === clientId) {
+    return room;
+  }
+  const recoveredSeat = recoveredClientId ? seatFor(room.seats, recoveredClientId) : 'spectator';
+  if (recoveredSeat !== 'spectator' && !(room.presence && room.presence[recoveredSeat])) {
+    room.seats[recoveredSeat] = clientId;
     return room;
   }
   if (!room.seats.white) {
@@ -95,7 +159,7 @@ function claimSeat(room, clientId) {
    connected) so the other seat can tell "opponent hasn't shown up yet"
    (seat claimed, no presence entry) apart from "opponent was here and
    left" (seat claimed, presence entry gone) - claimSeat never frees a seat
-   once taken (a reload is meant to reclaim it, see clientIdFor above), so
+   once taken (a reload is meant to reclaim it, see identityFor above), so
    seat occupancy alone can't distinguish those two cases.
 
    Built on Firebase's .info/connected + onDisconnect() idiom: onDisconnect
@@ -211,8 +275,17 @@ function deserializeState(raw) {
  * onRoom before this client's own color is known, handing the caller a
  * wrong 'spectator' default for what's actually its own seat.
  */
-function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, database } = {}) {
-  const clientId = clientIdOverride || clientIdFor(roomCode);
+function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, recoveredClientId: recoveredOverride, database } = {}) {
+  /* An injected clientId means a test standing in for a tab, so the
+     recovery candidate is injected alongside it rather than read from
+     storage - identityFor writes as well as reads, and calling it here
+     would have one fake tab quietly overwrite another's mirror. Real
+     callers pass neither and get both from storage. */
+  const identity = clientIdOverride
+    ? { clientId: clientIdOverride, recoveredClientId: recoveredOverride || null }
+    : identityFor(roomCode);
+  const clientId = identity.clientId;
+  const recoveredClientId = identity.recoveredClientId;
   const db = database || defaultDatabase();
   const roomRef = db.ref('rooms/' + roomCode);
 
@@ -221,7 +294,7 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, database }
   let valueHandler = null;
   let detachPresence = () => {};
 
-  roomRef.transaction((current) => claimSeat(current || emptyRoom(), clientId)).then((result) => {
+  roomRef.transaction((current) => claimSeat(current || emptyRoom(), clientId, recoveredClientId)).then((result) => {
     color = seatFor(result.snapshot.val().seats, clientId);
     detachPresence = attachPresence(db, roomCode, color);
 

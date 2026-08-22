@@ -121,8 +121,8 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    to exit and return to, and 5e is the largest change and wants the mode
    choice from 5b to already exist.
 
-   - **5a. Reclaim a seat after a mobile tab is discarded.** A tab's identity
-     lives in `sessionStorage` (`clientIdFor`, `sync.js`), which mobile
+   - **5a. Reclaim a seat after a mobile tab is discarded.** ✅ Done. A tab's
+     identity lived in `sessionStorage` (`clientIdFor`, `sync.js`), which mobile
      browsers discard along with a backgrounded tab. Returning later rejoins
      with a fresh client id, finds both seats still held by the old ids (a
      seat is deliberately never freed), and is demoted to spectator — at
@@ -138,6 +138,14 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      presence is long gone, while a second tab opened on the same machine
      does not steal seat one, because that tab is still connected. Testable
      against the existing in-memory database fake.
+
+     Built as described: `clientIdFor` became `identityFor`, returning
+     `{ clientId, recoveredClientId }` as one function rather than two,
+     because the mirror has to be read before `sessionStorage` is written
+     and splitting that across two calls would silently disable recovery
+     with nothing failing loudly. `claimSeat` takes the candidate and
+     consults `presence` to decide. Covered by 11 tests written before the
+     fix, seven of them failing until it landed.
    - **5b. Start screen as the entry point.** Replace "boot straight into a
      hot-seat game, with Play Online as one more button in the dice area"
      with an explicit choice between playing on this device and playing
@@ -308,6 +316,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+A player returning to an online game after their mobile browser discarded the backgrounded tab now gets their seat back instead of being demoted to spectator. The tab identity in `sessionStorage` is gone by then, so the client id is mirrored to `localStorage` too and offered to the seat-claiming transaction as a candidate — honoured only if nobody is currently sitting in that seat, which is what keeps a second tab from stealing a live one. Written test-first: 11 tests, seven red until the fix landed.
 
 Online play now tracks presence (see Architecture): the room status line tells "waiting for opponent" (seat unclaimed) apart from "opponent disconnected" (seat claimed, but that player's connection just dropped) — previously indistinguishable, since a seat is never freed once claimed. Verified against the live Firebase project with two real tabs, including a genuine tab-close disconnect.
 

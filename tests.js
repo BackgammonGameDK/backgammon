@@ -746,6 +746,237 @@ test('sending a state update does not clobber the other seat\'s presence', async
   assertEqual(bRoom.presence.black, true, "black's own presence should survive white sending a state update");
 });
 
+/* ---- sync.js: seat recovery after a discarded tab (stage 5a) ----
+ *
+ * A tab's identity lives in sessionStorage (identityFor), which is what
+ * lets two tabs on one machine hold both seats - but mobile browsers
+ * discard a backgrounded tab along with its sessionStorage. The tab that
+ * comes back a day later rejoins under a brand new id, finds both seats
+ * still held (a seat is never freed), and is demoted to spectator, which
+ * blockedOnline() then blocks out of the game entirely. That is the bug
+ * these tests describe.
+ *
+ * The fix under test: mirror the id to localStorage as well, and when a
+ * join finds sessionStorage empty, offer the mirrored id to the
+ * seat-claiming transaction as a *candidate* - adopted only if that seat
+ * has no presence entry right now. Presence is what separates the two
+ * cases that otherwise look identical from the room record alone: a
+ * player returning to a seat nobody is sitting in (reclaim it) versus a
+ * second tab opening alongside a live one (do not steal it).
+ *
+ * These go through joinRoom's `recoveredClientId` option, the same kind of
+ * seam `clientId` already is - real callers get it from localStorage,
+ * tests inject it, because per-tab storage can't be faked from one page.
+ */
+
+test('a returning client whose tab was discarded reclaims its seat instead of spectating', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+
+  /* The tab is discarded: the server notices the connection drop and
+     clears presence, but the seat itself stays claimed, as designed. */
+  db._simulateDisconnect(`rooms/${code}/presence/white`);
+  a.leave();
+
+  let color = null;
+  const returning = joinRoom(
+    code,
+    { onRoom: () => { color = returning.color; } },
+    { clientId: 'c1-new-tab', recoveredClientId: 'c1', database: db }
+  );
+  await waitFor(() => color !== null);
+  assertEqual(color, 'white', 'the returning player should get their own seat back, not spectate their own game');
+});
+
+test('a second tab on the same machine does not steal a seat that is still occupied', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let aRoom = null;
+  const a = joinRoom(code, { onRoom: (r) => { aRoom = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => aRoom && aRoom.presence && aRoom.presence.white === true);
+
+  /* localStorage is shared across every tab of one origin, so a genuinely
+     new second tab really does find the first tab's mirrored id. It must
+     not be adopted here: the first tab is still sitting in that seat. */
+  let color = null;
+  const second = joinRoom(
+    code,
+    { onRoom: () => { color = second.color; } },
+    { clientId: 'c2', recoveredClientId: 'c1', database: db }
+  );
+  await waitFor(() => color !== null);
+  assertEqual(color, 'black', 'a live seat should never be handed to a second tab, only an abandoned one');
+  assertEqual(a.color, 'white', 'and the tab actually holding the seat should keep it');
+});
+
+test('a recovery candidate that holds no seat is ignored', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+
+  let color = null;
+  const c = joinRoom(
+    code,
+    { onRoom: () => { color = c.color; } },
+    { clientId: 'c3', recoveredClientId: 'never-sat-here', database: db }
+  );
+  await waitFor(() => color !== null);
+  assertEqual(color, 'spectator', 'a stale candidate must not become a way to take a seat off someone');
+});
+
+test('both players returning to an abandoned room reclaim their own seats', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+
+  db._simulateDisconnect(`rooms/${code}/presence/white`);
+  db._simulateDisconnect(`rooms/${code}/presence/black`);
+  a.leave();
+  b.leave();
+
+  let aColor = null;
+  let bColor = null;
+  const a2 = joinRoom(code, { onRoom: () => { aColor = a2.color; } }, { clientId: 'c1-new', recoveredClientId: 'c1', database: db });
+  await waitFor(() => aColor !== null);
+  const b2 = joinRoom(code, { onRoom: () => { bColor = b2.color; } }, { clientId: 'c2-new', recoveredClientId: 'c2', database: db });
+  await waitFor(() => bColor !== null);
+
+  assertEqual(aColor, 'white', 'white should come back to white');
+  assertEqual(bColor, 'black', 'black should come back to black');
+});
+
+test('reclaiming a seat leaves the other seat untouched', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+
+  db._simulateDisconnect(`rooms/${code}/presence/white`);
+  a.leave();
+
+  let room = null;
+  joinRoom(
+    code,
+    { onRoom: (r) => { room = r; } },
+    { clientId: 'c1-new-tab', recoveredClientId: 'c1', database: db }
+  );
+  await waitFor(() => room !== null);
+  assertEqual(room.seats.black, 'c2', "black's seat should be exactly as it was before white came back");
+});
+
+test('a reclaimed seat sees the game already in progress, not a fresh board', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let aRoom = null;
+  const a = joinRoom(code, { onRoom: (r) => { aRoom = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => aRoom !== null);
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+
+  a.sendState(withRoll(createInitialState(), [5, 3]));
+  await waitFor(() => aRoom.state && aRoom.state.dice.length === 2);
+
+  db._simulateDisconnect(`rooms/${code}/presence/white`);
+  a.leave();
+
+  let room = null;
+  joinRoom(
+    code,
+    { onRoom: (r) => { room = r; } },
+    { clientId: 'c1-new-tab', recoveredClientId: 'c1', database: db }
+  );
+  await waitFor(() => room && room.state);
+  assertEqual(room.state.dice.map((d) => d.value), [5, 3], 'the game should resume where it was left, not restart');
+});
+
+test('a reclaimed seat is marked present again', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
+  let bRoom = null;
+  joinRoom(code, { onRoom: (r) => { bRoom = r; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom && bRoom.presence && bRoom.presence.white === true);
+
+  db._simulateDisconnect(`rooms/${code}/presence/white`);
+  a.leave();
+  await waitFor(() => !bRoom.presence || !bRoom.presence.white);
+
+  joinRoom(
+    code,
+    { onRoom: () => {} },
+    { clientId: 'c1-new-tab', recoveredClientId: 'c1', database: db }
+  );
+  await waitFor(() => bRoom.presence && bRoom.presence.white === true);
+});
+
+/* ---- sync.js: the stored identity behind seat recovery ----
+ *
+ * The half of stage 5a above the transaction: which id a join actually
+ * arrives with, and which one it offers as a recovery candidate. Reading
+ * the mirror has to happen *before* sessionStorage is written, or
+ * sessionStorage is never empty and the candidate is never offered -
+ * which is why this is one function returning both rather than two that
+ * have to be called in the right order.
+ */
+
+test('a fresh tab records its client id in both session and local storage', () => {
+  const code = freshRoomCode();
+  const identity = identityFor(code);
+
+  assertEqual(sessionStorage.getItem(CLIENT_ID_PREFIX + code), identity.clientId, 'the per-tab identity is still sessionStorage');
+  assertEqual(localStorage.getItem(RECOVERY_ID_PREFIX + code), identity.clientId, 'and it is mirrored for a future tab to recover');
+  assertEqual(identity.recoveredClientId, null, 'a room this browser has never seen has nothing to recover');
+});
+
+test('a tab that still holds its session identity offers no recovery candidate', () => {
+  const code = freshRoomCode();
+  const first = identityFor(code);
+  const again = identityFor(code);
+
+  assertEqual(again.clientId, first.clientId, 'a reload of the same tab keeps the same id, exactly as before');
+  assertEqual(again.recoveredClientId, null, 'nothing to recover while the session identity is intact');
+});
+
+test('a tab whose session storage was discarded offers the mirrored id as a candidate', () => {
+  const code = freshRoomCode();
+  const first = identityFor(code);
+
+  /* What a mobile browser does to a backgrounded tab: sessionStorage goes,
+     localStorage stays. */
+  sessionStorage.removeItem(CLIENT_ID_PREFIX + code);
+
+  const returning = identityFor(code);
+  assert(returning.clientId !== first.clientId, 'the new tab is genuinely a new client, not the old one');
+  assertEqual(returning.recoveredClientId, first.clientId, 'and it carries the old id as the seat it means to reclaim');
+});
+
+test('a recovery candidate is scoped to its own room', () => {
+  const roomA = freshRoomCode();
+  const roomB = freshRoomCode();
+  const a = identityFor(roomA);
+  const b = identityFor(roomB);
+
+  sessionStorage.removeItem(CLIENT_ID_PREFIX + roomB);
+  const returning = identityFor(roomB);
+
+  assertEqual(returning.recoveredClientId, b.clientId, 'room B recovers room B');
+  assert(returning.recoveredClientId !== a.clientId, 'and never room A, which may still be live in another tab');
+});
+
 /* ---- serializeState / deserializeState: Firebase's null-stripping ----
  *
  * These exist because two real bugs slipped past every test above: room.state
