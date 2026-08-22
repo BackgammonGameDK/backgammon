@@ -977,6 +977,100 @@ test('a recovery candidate is scoped to its own room', () => {
   assert(returning.recoveredClientId !== a.clientId, 'and never room A, which may still be live in another tab');
 });
 
+/* ---- sync.js: leaving on purpose vs. losing the connection (stage 5c) ----
+ *
+ * Both end with the same presence entry gone, so the room record alone
+ * can't tell them apart - and "opponent disconnected" is the wrong thing
+ * to tell someone whose opponent has actually quit and isn't coming back.
+ * leave({ departed: true }) is what separates them; the plain disconnect
+ * path must be careful *not* to set it.
+ */
+
+test('leaving on purpose marks that seat as departed', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
+  let bRoom = null;
+  joinRoom(code, { onRoom: (r) => { bRoom = r; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom && bRoom.presence && bRoom.presence.white === true);
+
+  a.leave({ departed: true });
+  await waitFor(() => bRoom.departed && bRoom.departed.white === true);
+  await waitFor(() => !bRoom.presence || !bRoom.presence.white);
+});
+
+test('an ordinary disconnect does not mark the seat as departed', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
+  let bRoom = null;
+  joinRoom(code, { onRoom: (r) => { bRoom = r; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom && bRoom.presence && bRoom.presence.white === true);
+
+  /* The server noticing a dropped connection - a closed tab, a dead
+     network - which clears presence and nothing else. */
+  db._simulateDisconnect(`rooms/${code}/presence/white`);
+  await waitFor(() => !bRoom.presence || !bRoom.presence.white);
+
+  assert(!(bRoom.departed && bRoom.departed.white), 'a dropped connection is not someone quitting, and must not read as one');
+});
+
+test('leaving without announcing it does not mark the seat as departed', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
+  let bRoom = null;
+  joinRoom(code, { onRoom: (r) => { bRoom = r; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom && bRoom.presence && bRoom.presence.white === true);
+
+  a.leave();
+  await waitFor(() => !bRoom.presence || !bRoom.presence.white);
+
+  assert(!(bRoom.departed && bRoom.departed.white), 'leave() on its own is the teardown path, not a quit announcement');
+});
+
+test('coming back to a seat clears the departed flag it left behind', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+
+  let bRoom = null;
+  joinRoom(code, { onRoom: (r) => { bRoom = r; } }, { clientId: 'c2', database: db });
+  await waitFor(() => bRoom && bRoom.presence && bRoom.presence.white === true);
+
+  a.leave({ departed: true });
+  await waitFor(() => bRoom.departed && bRoom.departed.white === true);
+
+  /* Same tab, same client id - the reload case, which reclaims the seat. */
+  joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => !bRoom.departed || !bRoom.departed.white);
+  await waitFor(() => bRoom.presence && bRoom.presence.white === true);
+});
+
+test('a spectator leaving announces nothing, having no seat to leave', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  const a = joinRoom(code, { onRoom: () => {} }, { clientId: 'c1', database: db });
+  await waitFor(() => a.color !== 'spectator');
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+
+  let room = null;
+  const c = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c3', database: db });
+  await waitFor(() => c.color === 'spectator' && room !== null);
+
+  c.leave({ departed: true });
+  await waitFor(() => true);
+  assert(!room.departed, 'a spectator has no seat, so there is nobody waiting on one to announce to');
+});
+
 /* ---- serializeState / deserializeState: Firebase's null-stripping ----
  *
  * These exist because two real bugs slipped past every test above: room.state

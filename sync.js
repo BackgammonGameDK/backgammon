@@ -7,8 +7,9 @@
  * joinRoom(...)'s callback timing (onRoom never fires synchronously), which
  * is what Firebase's onValue naturally does too.
  *
- * The room record at /rooms/<code> is exactly what it was in Stage C:
- * { seats: {white, black}, state, seq, presence }. database.rules.json restricts
+ * The room record at /rooms/<code> is Stage C's, plus two keys added
+ * since: { seats: {white, black}, state, seq, presence, departed }.
+ * database.rules.json restricts
  * read/write to a specific room path, and only to someone who already
  * knows its code - there is no listing, no accounts, matching the
  * friend-level trust model decided up front.
@@ -172,12 +173,17 @@ function claimSeat(room, clientId, recoveredClientId) {
    re-register or a second real disconnect would go unnoticed.
 
    A spectator gets no presence entry - there's no seat for the other
-   player to be waiting on. Returns a detach function for leave(). */
+   player to be waiting on. Returns a detach function for leave().
+
+   Connecting also clears this seat's `departed` flag (see leave below):
+   whatever that seat did last time, someone is sitting in it now, so the
+   opponent should stop being told it was abandoned. */
 function attachPresence(db, roomCode, color) {
   if (color === 'spectator') {
     return () => {};
   }
   const presenceRef = db.ref('rooms/' + roomCode + '/presence/' + color);
+  const departedRef = db.ref('rooms/' + roomCode + '/departed/' + color);
   const connectedRef = db.ref('.info/connected');
   const handler = (snapshot) => {
     if (snapshot.val() !== true) {
@@ -185,6 +191,7 @@ function attachPresence(db, roomCode, color) {
     }
     presenceRef.onDisconnect().remove().then(() => {
       presenceRef.set(true);
+      departedRef.remove();
     });
   };
   connectedRef.on('value', handler);
@@ -334,7 +341,21 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, recoveredC
     roomRef.update(next);
   }
 
-  function leave() {
+  /* `departed: true` says this client is leaving on purpose, as opposed to
+     its connection simply going away. Both end with presence cleared, so
+     without this the two are indistinguishable in the room record and the
+     opponent gets the same "opponent disconnected" either way - which is
+     the wrong thing to tell someone whose opponent has actually quit and
+     isn't coming back mid-turn. The flag is written before presence is
+     dropped, and cleared again by attachPresence if that seat is ever
+     reoccupied.
+
+     A spectator never sets it: there is no seat for anyone to be waiting
+     on, so there is nothing to announce. */
+  function leave({ departed } = {}) {
+    if (departed && color !== 'spectator') {
+      db.ref('rooms/' + roomCode + '/departed/' + color).set(true);
+    }
     if (valueHandler) {
       roomRef.off('value', valueHandler);
     }

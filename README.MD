@@ -169,11 +169,21 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      `#pre-join-area` row did, so `--chrome` is unchanged and still right
      for online play — but a hot-seat game now leaves that row empty, and
      the slack it left was reclaimed in a follow-up (see Status).
-   - **5c. Exit to the start screen.** A button that leaves the current game
-     and returns to 5b's screen, clearing the room from the URL. Depends on
-     5b for a destination. Once 5a is in, this is a deliberate "I am done
-     with this game" rather than the recovery mechanism it would otherwise
-     have to be.
+   - **5c. Exit to the start screen.** ✅ Done. A button that leaves the
+     current game and returns to 5b's screen, clearing the room from the
+     URL. Depends on 5b for a destination. Once 5a is in, this is a
+     deliberate "I am done with this game" rather than the recovery
+     mechanism it would otherwise have to be.
+
+     Built with one addition to the plan: leaving now *announces* itself.
+     A deliberate exit and a dropped connection both end with the same
+     presence entry gone, so the opponent was told "opponent disconnected"
+     either way — wrong for someone whose opponent has actually quit. The
+     room record gained a `departed` flag, set only by Exit and cleared
+     whenever that seat reconnects, so the status line can say "opponent
+     left the game" instead. Exit deliberately does *not* free the seat:
+     seats are never released in this design and 5a's recovery depends on
+     that, so returning to the room reclaims the same seat.
    - **5d. Rejoin the last room from the start screen.** Remember the last
      room code and offer it as a button on 5b's screen. Falls out of 5a and
      5c almost for free, and is what actually removes the hand-edit-the-URL
@@ -328,6 +338,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+An Exit button then completed the round trip: it leaves the current game — hot-seat or online — and returns to the start screen with the room code cleared from the URL, so getting out of a game no longer means hand-editing the address bar. Leaving an online game also announces itself. A deliberate exit and a dropped connection previously looked identical in the room record (both just clear presence), so the opponent saw "opponent disconnected" either way; a `departed` flag, set only by Exit and cleared whenever that seat reconnects, now distinguishes them and the status line reads "opponent left the game". The seat itself is not freed — seats are never released in this design, and coming back to the room reclaims the same one.
 
 The hot-seat board then grew by 57px (~9%) at desktop sizes. `--chrome`, the board's vertical budget, is measured against the tallest state the layout takes — an online game, where `.online-area` holds the room status row — so that the board can never overrun the viewport. A hot-seat game has no room status, so that row is now hidden outright, and `--online-row` (measured per breakpoint, the same by-hand way `--chrome` is) is added back to the budget for hot-seat only. Landscape phones deliberately reclaim nothing, since there the chrome sits *beside* the board and its height was never part of the budget at all. The board's bottom edge lands in the same place in both modes, which is what confirms the reclaimed figure is exactly right rather than merely bigger.
 
