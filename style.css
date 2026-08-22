@@ -162,6 +162,159 @@ body {
    dismissed); this is the one-off moment on top of it. Click anywhere on
    the backdrop, or Play Again, to dismiss - script.js only shows it once
    per win (see celebrationShownFor), so it won't reappear on its own. */
+/* The start screen. Built as a full-viewport overlay, the same shape
+   #celebration already uses, for the same reason: it sits on top of the
+   finished layout instead of displacing it, so it needs no space of its
+   own in the board's --chrome budget and can't push the board around.
+   The board renders behind it (see idleState in script.js) rather than
+   the screen covering an empty page - what you're about to play is worth
+   seeing while you choose how to play it.
+
+   Scrolls internally (overflow-y) rather than clipping: this is the one
+   panel whose content is a fixed list of controls that can't be shortened
+   on a short landscape phone. */
+#start-screen[hidden] {
+  display: none;
+}
+
+#start-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(43, 43, 43, 0.94);
+  overflow-y: auto;
+}
+
+#start-content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  width: 100%;
+  max-width: 320px;
+  padding: 28px 32px;
+  background: #2b2b2b;
+  border: 2px solid #6b4226;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+#start-title {
+  margin-bottom: 4px;
+  font-size: 30px;
+  font-weight: bold;
+  color: #e0a030;
+  text-align: center;
+}
+
+/* Both routes into a game get the same weight deliberately - neither
+   hot-seat nor online is the "real" way to play, and making one a plain
+   link would re-create the buried-secondary-action problem the start
+   screen exists to fix. */
+.start-primary {
+  padding: 14px 20px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #f0d9b5;
+  background: #6b4226;
+  border: 1px solid #8a5a33;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.start-primary:hover {
+  background: #7d4e2d;
+}
+
+/* A labelled rule, so the two online controls below read as one group
+   rather than three unrelated things stacked under the hot-seat button. */
+#start-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+  color: #999;
+  font-size: 13px;
+}
+
+#start-divider::before,
+#start-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #555;
+}
+
+#start-join-label {
+  margin-top: 2px;
+  color: #bbb;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Validation feedback has to live inside the panel: #message, which every
+   other part of the app writes to, sits in the dice area *behind* this
+   overlay, so a code rejected here would set text nobody can see and the
+   screen would just appear not to respond. Found exactly that way while
+   testing this screen. */
+#start-error[hidden] {
+  display: none;
+}
+
+#start-error {
+  color: #e08a30;
+  font-size: 13px;
+  text-align: center;
+}
+
+#start-content #join-area {
+  display: flex;
+  gap: 8px;
+}
+
+#start-content #room-code-input {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 400px) {
+  #start-content {
+    padding: 22px 20px;
+    gap: 12px;
+  }
+
+  #start-title {
+    font-size: 26px;
+  }
+}
+
+/* A landscape phone is height-limited (the same constraint that moves the
+   dice area beside the board at this breakpoint) - so the panel anchors to
+   the top and scrolls, rather than centring and having its top edge run
+   off the screen where the title and first button would be unreachable. */
+@media (max-height: 500px) and (orientation: landscape) {
+  #start-screen {
+    align-items: flex-start;
+  }
+
+  #start-content {
+    gap: 10px;
+    padding: 18px 24px;
+  }
+
+  #start-title {
+    font-size: 22px;
+  }
+
+  .start-primary {
+    padding: 10px 16px;
+  }
+}
+
 #celebration[hidden] {
   display: none;
 }
@@ -323,26 +476,12 @@ body {
    that (author beats user-agent regardless of selector specificity), so
    `display: flex` below would otherwise make the hidden attribute purely
    cosmetic - present on the element, but with no actual effect on whether
-   it's shown. Same fix, same reason, on #celebration further down, and on
-   #pre-join-area/#qr-panel above/below. */
+   it's shown. Same fix, same reason, on #celebration and #start-screen
+   further down, and on #qr-panel below. */
 #room-status[hidden],
-#pre-join-area[hidden],
 #room-details[hidden],
 #qr-panel[hidden] {
   display: none;
-}
-
-/* One row, holding "Play Online" and the code-entry alternative side by
-   side - kept to one row deliberately, since --chrome (see the .board
-   comment below) is a hand-measured constant that assumes the dice area's
-   current height; a row that wraps on narrow screens would silently break
-   that budget. */
-#pre-join-area {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 #join-area {
@@ -454,9 +593,9 @@ body {
   z-index: 15;
 }
 
-/* Floats above the board instead of displacing it when opened, same reason
-   #pre-join-area stays one row: --chrome is a fixed budget the board's
-   size calc() depends on, and this popover isn't part of it. */
+/* Floats above the board instead of displacing it when opened, for the
+   same reason #room-status stays one row: --chrome is a fixed budget the
+   board's size calc() depends on, and this popover isn't part of it. */
 #qr-panel {
   position: absolute;
   top: 100%;
@@ -785,13 +924,19 @@ button,
        stacked rows' worth of height (but not two full 8px gaps -
        flex-wrap still needs its own row gap), and h1 below is trimmed
        down from the browser default title margins it used to carry
-       unstyled. Measured against the pre-join-area row (Play Online +
-       room code + Join) rather than the room-status chip that replaces
-       it once online - the pre-join row is the taller of the two, so
-       it's the one --chrome actually has to fit. Measured directly (see
-       the base --chrome comment for the method); re-measure if
-       .status-row's or .online-area's content, or h1's own rule below,
-       changes. */
+       unstyled. Measured against #room-status in its uncollapsed form
+       (room code + You are White + waiting text + Copy link + QR), which
+       since the start screen took over the join controls is the only
+       thing .online-area ever holds, and is the tallest state it takes -
+       the collapsed chip is 6px shorter, and hot-seat leaves the row
+       empty entirely, 30px shorter. One budget covers all three by being
+       measured against the tallest, so the board can never overrun; the
+       cost is that a hot-seat game leaves those 30px unspent. Making the
+       budget mode-aware would buy them back, at the price of a second
+       hand-measured number at every breakpoint - deliberately not done
+       (see README's Future Improvements). Measured directly (see the
+       base --chrome comment for the method); re-measure if .status-row's
+       or .online-area's content, or h1's own rule below, changes. */
     --chrome: 286px;
   }
 
@@ -992,10 +1137,10 @@ button,
      comfortably fit everything it holds - including 4 dice on a double,
      and the room-status popover's contents (#room-details) - without any
      of it overflowing sideways; re-measure if that content's own sizing
-     changes. #pre-join-area and #room-details wrapping onto multiple
-     lines here (both already allow it) is expected and fine, unlike at
-     the other breakpoints where the comments on those rules assume a
-     single row - there's no scarce height budget being protected here. */
+     changes. #room-details wrapping onto multiple lines here (it already
+     allows it) is expected and fine, unlike at the other breakpoints
+     where the comment on that rule assumes a single row - there's no
+     scarce height budget being protected here. */
   .dice-area {
     flex-direction: column;
     flex-shrink: 0;

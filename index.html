@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=34">
+  <link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -16,13 +16,6 @@
       <div id="pip-count" hidden></div>
     </div>
     <div class="online-area">
-      <div id="pre-join-area">
-        <button id="play-online-button">Play Online</button>
-        <div id="join-area">
-          <input id="room-code-input" type="text" maxlength="6" placeholder="Room code" autocomplete="off">
-          <button id="join-room-button">Join</button>
-        </div>
-      </div>
       <div id="room-status" hidden>
         <button id="room-chip" hidden></button>
         <div id="room-details">
@@ -105,6 +98,28 @@
     </div>
   </div>
 
+  <!-- The entry point: which kind of game, chosen before a game exists.
+       The online controls live here rather than beside Roll and Hints,
+       where they read as one more in-game button instead of the choice
+       they actually are. Visible by default and hidden by script.js when
+       the URL already carries a #room= code - an invite link should open
+       straight into the game, not stop to ask a question it has already
+       answered. -->
+  <div id="start-screen">
+    <div id="start-content">
+      <div id="start-title">Backgammon</div>
+      <button id="start-hotseat-button" class="start-primary">Play on this device</button>
+      <div id="start-divider"><span>or play online</span></div>
+      <button id="play-online-button" class="start-primary">Start an online game</button>
+      <div id="start-join-label">Got a room code from a friend?</div>
+      <div id="join-area">
+        <input id="room-code-input" type="text" maxlength="6" placeholder="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button id="join-room-button">Join</button>
+      </div>
+      <div id="start-error" hidden></div>
+    </div>
+  </div>
+
   <div id="celebration" hidden>
     <div id="confetti-layer"></div>
     <div id="celebration-content">
@@ -115,10 +130,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=34"></script>
-  <script src="qrcode-generator.js?v=34"></script>
-  <script src="rules.js?v=34"></script>
-  <script src="sync.js?v=34"></script>
-  <script src="script.js?v=34"></script>
+  <script src="firebase-config.js?v=35"></script>
+  <script src="qrcode-generator.js?v=35"></script>
+  <script src="rules.js?v=35"></script>
+  <script src="sync.js?v=35"></script>
+  <script src="script.js?v=35"></script>
 </body>
 </html>

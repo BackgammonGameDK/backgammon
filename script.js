@@ -26,7 +26,9 @@ const messageEl = document.querySelector('#message');
 const hintsToggle = document.querySelector('#hints-toggle');
 const pipCountEl = document.querySelector('#pip-count');
 const playOnlineButton = document.querySelector('#play-online-button');
-const preJoinAreaEl = document.querySelector('#pre-join-area');
+const startScreenEl = document.querySelector('#start-screen');
+const startHotseatButton = document.querySelector('#start-hotseat-button');
+const startErrorEl = document.querySelector('#start-error');
 const roomCodeInput = document.querySelector('#room-code-input');
 const joinRoomButton = document.querySelector('#join-room-button');
 const roomStatusEl = document.querySelector('#room-status');
@@ -103,7 +105,28 @@ const MAX_VISIBLE_BAR = 4;
 const MAX_VISIBLE_PER_POINT = 5;
 const MAX_VISIBLE_PER_POINT_WITH_BADGE = 4;
 
-let state = createInitialState();
+/* The board drawn behind the start screen: the standard opening position,
+   but with no dice and no opening roll, because nobody has chosen a mode
+   yet. Purely a backdrop - picking a mode is what creates the real state,
+   and it creates a fresh one. Deferring that is the whole point of the
+   start screen: dice already rolled before the player chose anything is
+   exactly the confusion it exists to remove, and generating them at load
+   and showing them later would only move that confusion behind one click.
+   The roll createInitialState does here is discarded unseen. */
+function idleState() {
+  const start = createInitialState();
+  start.dice = [];
+  start.openingRoll = null;
+  return start;
+}
+
+let state = idleState();
+/* Whether a mode has actually been chosen. Distinct from `state` having
+   content - the backdrop above is a perfectly valid state, so nothing
+   about the state object itself says "no game yet". Every path that acts
+   on the board checks this, rather than relying on the overlay to cover
+   the controls. */
+let gameStarted = false;
 let selectedFrom = null;
 let hintsEnabled = false;
 /* Whether the room-code chip's popover (#room-details) has been opened
@@ -300,7 +323,7 @@ function renderDice() {
   state.dice.forEach((die) => {
     diceContainer.appendChild(createDie(die, canUseDie(state, state.currentPlayer, die.value)));
   });
-  rollButton.disabled = state.dice.length > 0 || Boolean(state.winner) || blockedOnline();
+  rollButton.disabled = !gameStarted || state.dice.length > 0 || Boolean(state.winner) || blockedOnline();
 }
 
 function renderStatus() {
@@ -450,7 +473,7 @@ function canSelect(from) {
 }
 
 board.addEventListener('click', (event) => {
-  if (state.winner || blockedOnline()) {
+  if (!gameStarted || state.winner || blockedOnline()) {
     return;
   }
 
@@ -507,7 +530,7 @@ board.addEventListener('click', (event) => {
 });
 
 rollButton.addEventListener('click', () => {
-  if (state.dice.length > 0 || state.winner || blockedOnline()) {
+  if (!gameStarted || state.dice.length > 0 || state.winner || blockedOnline()) {
     return;
   }
   selectedFrom = null;
@@ -544,6 +567,29 @@ hintsToggle.addEventListener('change', () => {
   hintsEnabled = hintsToggle.checked;
   pipCountEl.hidden = !hintsEnabled;
   renderSelection();
+});
+
+/* ---- Start screen -------------------------------------------------------
+ * The one place a mode is chosen, and the only thing that sets
+ * gameStarted. Both exits from here create the game rather than reveal a
+ * game that was already sitting there: hot-seat calls createInitialState()
+ * at the moment of the click, and online leaves the seeding to whichever
+ * client gets there first (handleRoomUpdate), once both seats are filled.
+ */
+
+function leaveStartScreen() {
+  startScreenEl.hidden = true;
+  gameStarted = true;
+}
+
+function showStartError(text) {
+  startErrorEl.textContent = text;
+  startErrorEl.hidden = false;
+}
+
+startHotseatButton.addEventListener('click', () => {
+  leaveStartScreen();
+  commitState(createInitialState());
 });
 
 /* ---- Online play (Stage C) --------------------------------------------
@@ -692,7 +738,7 @@ function handleRoomUpdate(room, color) {
 
 function startOnline(roomCode) {
   currentRoomCode = roomCode;
-  preJoinAreaEl.hidden = true;
+  leaveStartScreen();
   roomStatusEl.hidden = false;
   onlineRoom = joinRoom(roomCode, { onRoom: handleRoomUpdate });
 }
@@ -710,7 +756,11 @@ playOnlineButton.addEventListener('click', () => {
 function joinWithCode() {
   const code = roomCodeInput.value.trim().toUpperCase();
   if (!/^[A-Z0-9]{6}$/.test(code)) {
-    showMessage('Enter a 6-character room code.');
+    /* Not showMessage: that writes into #message down in the dice area,
+       which the start screen covers - the join controls only exist on
+       that screen, so the only place feedback can actually be read is
+       inside the panel itself. */
+    showStartError('Enter a 6-character room code.');
     return;
   }
   location.hash = `room=${code}`;
@@ -722,6 +772,11 @@ roomCodeInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     joinWithCode();
   }
+});
+/* Clear a rejection as soon as they start fixing it, rather than leaving
+   stale red text sitting under a code they've already corrected. */
+roomCodeInput.addEventListener('input', () => {
+  startErrorEl.hidden = true;
 });
 
 copyLinkButton.addEventListener('click', () => {
