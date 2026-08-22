@@ -22,23 +22,26 @@ const BAR_PIPS = 25;
 const BAR = 'bar';
 const OFF = 'off';
 
-/* Standard opening procedure: each player rolls one die, high roll starts,
-   a tie is rerolled. The starting player's first turn then uses both of
-   these individual die values as its dice - same as any other turn, no
-   special doubles handling, since a tie (the only way the two values could
-   match) is exactly what got rerolled away. */
-function rollOpeningRoll(randomFn) {
-  const random = randomFn || Math.random;
-  let white;
-  let black;
-  do {
-    white = Math.floor(random() * 6) + 1;
-    black = Math.floor(random() * 6) + 1;
-  } while (white === black);
-  return { white, black, starter: white > black ? 'white' : 'black' };
-}
+/* A game has two phases. `opening` is the standard procedure for deciding
+   who starts - each player rolls one die, high roll starts, a tie is
+   rerolled - and `playing` is everything after it. The phase is stored
+   rather than derived: it could be worked out from openingRoll's contents,
+   but the rule ("both values present and equal means a tie, present and
+   different means we already left") is exactly the kind of implicit
+   invariant that goes wrong quietly later.
 
-function createInitialState(randomFn) {
+   The rolls are made by the players rather than generated with the board,
+   which is the whole point: arriving at a game whose dice were already
+   thrown by nobody is confusing, and online it means the first thing you
+   do in a shared game is something you actually did.
+
+   During `opening`, `currentPlayer` is a placeholder and means nothing -
+   both players may roll, in either order. It only becomes meaningful when
+   the phase resolves. */
+const PHASE_OPENING = 'opening';
+const PHASE_PLAYING = 'playing';
+
+function initialPoints() {
   const points = new Array(POINT_COUNT + 1).fill(null);
   points[1] = { color: 'black', count: 2 };
   points[6] = { color: 'white', count: 5 };
@@ -48,21 +51,79 @@ function createInitialState(randomFn) {
   points[17] = { color: 'black', count: 3 };
   points[19] = { color: 'black', count: 5 };
   points[24] = { color: 'white', count: 2 };
+  return points;
+}
 
-  const opening = rollOpeningRoll(randomFn);
-
+/* Deterministic now, and deliberately so - nothing is rolled until a
+   player rolls it. That also defuses the re-roll-until-favourable problem
+   that gating the online seed on both seats was guarding against: a fresh
+   game no longer contains a roll to be unhappy with. */
+function createInitialState() {
   return {
-    points,
+    points: initialPoints(),
     bar: { white: 0, black: 0 },
     off: { white: 0, black: 0 },
-    dice: [
-      { value: opening.white, played: false },
-      { value: opening.black, played: false },
-    ],
-    currentPlayer: opening.starter,
+    dice: [],
+    currentPlayer: 'white',
     winner: null,
-    openingRoll: { white: opening.white, black: opening.black },
+    phase: PHASE_OPENING,
+    openingRoll: { white: null, black: null },
   };
+}
+
+/* True once both opening dice are showing but neither player has started -
+   i.e. the pair tied. Distinguishable from a resolved opening because
+   resolveOpening leaves the phase as `opening` only in that case. */
+function isOpeningTie(state) {
+  return (
+    state.phase === PHASE_OPENING &&
+    state.openingRoll.white !== null &&
+    state.openingRoll.black !== null
+  );
+}
+
+/* Rolls one player's opening die. A no-op if the phase is over or that
+   player has already rolled this round, so a double-tap or a duplicate
+   broadcast can't overwrite a die that's already showing.
+
+   A tied pair is left on screen rather than cleared immediately, so both
+   players actually see the tie that cost them a round; whoever rolls next
+   clears it and starts a fresh round. */
+function rollOpeningDie(state, color, randomFn) {
+  if (state.phase !== PHASE_OPENING) {
+    return state;
+  }
+  if (!isOpeningTie(state) && state.openingRoll[color] !== null) {
+    return state;
+  }
+
+  const random = randomFn || Math.random;
+  const next = cloneState(state);
+  if (isOpeningTie(state)) {
+    next.openingRoll = { white: null, black: null };
+  }
+  next.openingRoll[color] = Math.floor(random() * 6) + 1;
+  return resolveOpening(next);
+}
+
+/* Once both dice are in and differ, the higher one starts and the two
+   individual values become that turn's dice - same as any other turn, no
+   special doubles handling, since a tie is the only way they could match
+   and a tie doesn't resolve. */
+function resolveOpening(state) {
+  const { white, black } = state.openingRoll;
+  if (white === null || black === null || white === black) {
+    return state;
+  }
+
+  const next = cloneState(state);
+  next.phase = PHASE_PLAYING;
+  next.currentPlayer = white > black ? 'white' : 'black';
+  next.dice = [
+    { value: white, played: false },
+    { value: black, played: false },
+  ];
+  return next;
 }
 
 function cloneState(state) {
@@ -73,6 +134,7 @@ function cloneState(state) {
     dice: state.dice.map((d) => ({ ...d })),
     currentPlayer: state.currentPlayer,
     winner: state.winner,
+    phase: state.phase,
     openingRoll: state.openingRoll ? { ...state.openingRoll } : null,
   };
 }

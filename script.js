@@ -108,19 +108,14 @@ const MAX_VISIBLE_BAR = 4;
 const MAX_VISIBLE_PER_POINT = 5;
 const MAX_VISIBLE_PER_POINT_WITH_BADGE = 4;
 
-/* The board drawn behind the start screen: the standard opening position,
-   but with no dice and no opening roll, because nobody has chosen a mode
-   yet. Purely a backdrop - picking a mode is what creates the real state,
-   and it creates a fresh one. Deferring that is the whole point of the
-   start screen: dice already rolled before the player chose anything is
-   exactly the confusion it exists to remove, and generating them at load
-   and showing them later would only move that confusion behind one click.
-   The roll createInitialState does here is discarded unseen. */
+/* The board drawn behind the start screen. Since the opening roll became
+   the players' to make, a fresh game contains no dice either, so this is
+   just createInitialState() - kept as its own name because the two uses
+   are genuinely different ideas that happen to coincide: one is a
+   backdrop nobody is playing, the other is a game about to start, and
+   `gameStarted` is what tells them apart. */
 function idleState() {
-  const start = createInitialState();
-  start.dice = [];
-  start.openingRoll = null;
-  return start;
+  return createInitialState();
 }
 
 let state = idleState();
@@ -321,21 +316,97 @@ function createDie(die, usable, color) {
   return element;
 }
 
+/* Which colour the Roll button would throw for right now. Online that is
+   always your own seat - you roll your die, your opponent rolls theirs,
+   in either order. Hot-seat has one button for two people, so it steps
+   through them: White's die first, then Black's. */
+function openingRollerFor() {
+  if (onlineRoom) {
+    return onlineColor;
+  }
+  if (isOpeningTie(state)) {
+    return 'white';
+  }
+  return state.openingRoll.white === null ? 'white' : 'black';
+}
+
+function rollDisabled() {
+  if (!gameStarted || Boolean(state.winner) || blockedOnline()) {
+    return true;
+  }
+  if (state.phase === 'opening') {
+    const color = openingRollerFor();
+    if (!color || color === 'spectator') {
+      return true;
+    }
+    /* Your die is already showing and the round hasn't tied, so there is
+       nothing left for you to throw - you're waiting on the other player. */
+    return !isOpeningTie(state) && state.openingRoll[color] !== null;
+  }
+  return state.dice.length > 0;
+}
+
 function renderDice() {
   diceContainer.innerHTML = '';
-  state.dice.forEach((die) => {
-    diceContainer.appendChild(
-      createDie(die, canUseDie(state, state.currentPlayer, die.value), state.currentPlayer)
-    );
-  });
-  rollButton.disabled = !gameStarted || state.dice.length > 0 || Boolean(state.winner) || blockedOnline();
+
+  if (state.phase === 'opening') {
+    /* Each player's single die, in their own colour - which is what makes
+       the standard procedure legible without explaining it: two dice of
+       different colours, highest starts. Always white then black, so the
+       pair doesn't jump around depending on who rolled first. */
+    ['white', 'black'].forEach((color) => {
+      const value = state.openingRoll[color];
+      if (value !== null) {
+        diceContainer.appendChild(createDie({ value, played: false }, true, color));
+      }
+    });
+  } else {
+    state.dice.forEach((die) => {
+      diceContainer.appendChild(
+        createDie(die, canUseDie(state, state.currentPlayer, die.value), state.currentPlayer)
+      );
+    });
+  }
+
+  rollButton.disabled = rollDisabled();
+}
+
+/* What the turn indicator says while the opening is still being decided.
+   Deliberately different per audience: online each player is told about
+   their own die, since "waiting for your opponent" is the thing they
+   actually need; hot-seat addresses whichever player the one shared Roll
+   button is about to throw for, since there is nobody else to wait on. */
+function openingStatusText() {
+  const { white, black } = state.openingRoll;
+
+  if (isOpeningTie(state)) {
+    return `Both rolled ${white} — roll again`;
+  }
+
+  if (onlineRoom) {
+    if (onlineColor === 'spectator') {
+      return 'Waiting for the opening rolls';
+    }
+    if (state.openingRoll[onlineColor] === null) {
+      return 'Roll to see who starts';
+    }
+    return `You rolled ${state.openingRoll[onlineColor]} — waiting for your opponent`;
+  }
+
+  return white === null
+    ? 'White, roll to see who starts'
+    : `White rolled ${white} — Black, roll`;
 }
 
 function renderStatus() {
   const turnText = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
-  turnIndicator.textContent = state.openingRoll
-    ? `${turnText} — opening roll: White ${state.openingRoll.white}, Black ${state.openingRoll.black}`
-    : turnText;
+  if (state.phase === 'opening') {
+    turnIndicator.textContent = openingStatusText();
+  } else {
+    turnIndicator.textContent = state.openingRoll
+      ? `${turnText} — opening roll: White ${state.openingRoll.white}, Black ${state.openingRoll.black}`
+      : turnText;
+  }
   pipCountEl.textContent = `Pips — White: ${pipCount(state, 'white')} · Black: ${pipCount(state, 'black')}`;
   gameOverEl.textContent = state.winner ? `${state.winner === 'white' ? 'White' : 'Black'} wins!` : '';
   renderCelebration();
@@ -535,7 +606,32 @@ board.addEventListener('click', (event) => {
 });
 
 rollButton.addEventListener('click', () => {
-  if (!gameStarted || state.dice.length > 0 || state.winner || blockedOnline()) {
+  if (!gameStarted || state.winner || blockedOnline()) {
+    return;
+  }
+
+  if (state.phase === 'opening') {
+    const color = openingRollerFor();
+    if (!color || color === 'spectator') {
+      return;
+    }
+    const next = rollOpeningDie(state, color);
+    /* rollOpeningDie returns the same object when there was nothing to
+       roll - a double tap, or a click that raced a broadcast. Committing
+       it anyway would be a harmless no-op, but it would still cost a
+       round trip and a render for nothing. */
+    if (next === state) {
+      return;
+    }
+    selectedFrom = null;
+    /* resolveTurn only applies once the opening actually resolved and
+       real dice exist. It runs on this client, the one that made the
+       change, exactly as it does for an ordinary roll. */
+    commitState(next.phase === 'playing' ? resolveTurn(next) : next);
+    return;
+  }
+
+  if (state.dice.length > 0) {
     return;
   }
   selectedFrom = null;
@@ -705,17 +801,26 @@ function blockedOnline() {
   if (!(latestRoom && latestRoom.seats && latestRoom.seats[other])) {
     return true;
   }
+  /* Nobody is on turn while the opening is being decided - both players
+     roll, in either order - so the turn check can't apply yet. What stops
+     you rolling twice is rollDisabled, not this. */
+  if (state.phase === 'opening') {
+    return false;
+  }
   return onlineColor !== state.currentPlayer;
 }
 
 /* Both seats claimed - i.e. an opponent has shown up at least once (seats
    are never freed, so this doesn't require them to still be connected; see
-   the presence discussion above). Used to gate anything that generates a
-   fresh opening roll (the initial seed in handleRoomUpdate, and Restart):
-   otherwise the room's creator, alone in the room, could keep generating
-   opening rolls with nobody else watching and only broadcast once one
-   favors them - see handleRoomUpdate below for why the seed itself needs
-   the same guard. */
+   the presence discussion above). Gates the initial seed in
+   handleRoomUpdate and Restart.
+
+   The original reason was anti-abuse: createInitialState used to roll the
+   opening itself, so the room's creator, alone, could Restart repeatedly
+   until a roll favoured them and only then let anyone see it. That reason
+   is gone - a fresh game now contains no roll at all, and each player
+   throws their own die. The gate stays for the plainer one: there is no
+   game to seed or reset until somebody is there to play it. */
 function bothSeatsClaimed(room) {
   return Boolean(room && room.seats && room.seats.white && room.seats.black);
 }
@@ -790,12 +895,11 @@ function renderRoomStatus(room) {
    claimed, White seeds the starting position (including the opening roll)
    and broadcasts it.
 
-   Seeding waits for both seats deliberately: seeding it the moment White
-   alone creates the room would let White see the opening roll - and
-   Restart to re-roll it - with nobody else in the room to notice, before
-   Black ever shows up. Gating on bothSeatsClaimed (also enforced in
-   restartGame) means the opening roll only ever happens with both players
-   present to see it, same as any later restart.
+   Seeding waits for both seats (see bothSeatsClaimed above). It used to
+   be an anti-abuse measure, since the seeded state carried a ready-made
+   opening roll; now that the roll belongs to the players there is nothing
+   to game, and the gate simply avoids putting a board in a room nobody
+   has arrived at yet.
 
    `== null` rather than `=== null`: Firebase never actually stores a null
    value - a key written as null is simply absent from what a listener

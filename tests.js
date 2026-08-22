@@ -98,23 +98,95 @@ test('initial pip count is 167 for both players', () => {
   assertEqual(pipCount(state, 'black'), 167, 'black pips');
 });
 
-/* ---- opening roll (deciding who starts) ---- */
+/* ---- opening phase (deciding who starts) ----
+ *
+ * The rolls are the players', not the board's: a fresh game contains no
+ * dice at all until somebody throws one. `single` feeds one fraction per
+ * roll, since each call now produces exactly one die rather than looping
+ * internally until the pair differs.
+ */
 
-test('the higher single-die roll starts, keeping both rolls as its first turn\'s dice', () => {
-  const result = rollOpeningRoll(sequenceRandom([0.95, 0.45])); // 6 vs 3
-  assertEqual(result, { white: 6, black: 3, starter: 'white' });
+function single(fraction) {
+  return () => fraction;
+}
+
+test('a fresh game has rolled nothing and is waiting on both players', () => {
+  const state = createInitialState();
+  assertEqual(state.phase, 'opening');
+  assertEqual(state.openingRoll, { white: null, black: null }, 'neither die thrown yet');
+  assertEqual(state.dice, [], 'and no turn dice exist before the phase resolves');
 });
 
-test('a tied opening roll is rerolled rather than left unresolved', () => {
-  const result = rollOpeningRoll(sequenceRandom([0.45, 0.45, 0.95, 0.25])); // tie at 3-3, then 6 vs 2
-  assertEqual(result, { white: 6, black: 2, starter: 'white' });
+test('one opening die leaves the game waiting for the other player', () => {
+  const state = rollOpeningDie(createInitialState(), 'white', single(0.95)); // 6
+  assertEqual(state.phase, 'opening', 'one die decides nothing');
+  assertEqual(state.openingRoll, { white: 6, black: null });
+  assertEqual(state.dice, [], 'still no turn dice');
 });
 
-test('createInitialState wires the opening roll into currentPlayer, dice, and openingRoll', () => {
-  const state = createInitialState(sequenceRandom([0.25, 0.75])); // 2 vs 5
+test('the higher opening die starts, and both values become that turn\'s dice', () => {
+  let state = createInitialState();
+  state = rollOpeningDie(state, 'white', single(0.25)); // 2
+  state = rollOpeningDie(state, 'black', single(0.75)); // 5
+
+  assertEqual(state.phase, 'playing');
   assertEqual(state.currentPlayer, 'black', 'higher roll (5) starts');
   assertEqual(state.dice.map((d) => d.value), [2, 5], 'both individual rolls become the first turn\'s dice');
-  assertEqual(state.openingRoll, { white: 2, black: 5 });
+  assertEqual(state.openingRoll, { white: 2, black: 5 }, 'and stay for the banner');
+});
+
+test('either player may roll first', () => {
+  let state = createInitialState();
+  state = rollOpeningDie(state, 'black', single(0.95)); // 6
+  state = rollOpeningDie(state, 'white', single(0.25)); // 2
+
+  assertEqual(state.currentPlayer, 'black', 'order of rolling does not affect who starts');
+  assertEqual(state.dice.map((d) => d.value), [2, 6], 'dice are always listed white-then-black, not in the order they were rolled');
+});
+
+test('a tie stays in the opening phase with both dice still showing', () => {
+  let state = createInitialState();
+  state = rollOpeningDie(state, 'white', single(0.45)); // 3
+  state = rollOpeningDie(state, 'black', single(0.45)); // 3
+
+  assertEqual(state.phase, 'opening', 'a tie decides nothing');
+  assertEqual(state.openingRoll, { white: 3, black: 3 }, 'and is left on screen rather than cleared, so both players see it');
+  assert(isOpeningTie(state), 'which is what makes the tie recognisable to the UI');
+  assertEqual(state.dice, []);
+});
+
+test('rolling after a tie clears both dice and starts a fresh round', () => {
+  let state = createInitialState();
+  state = rollOpeningDie(state, 'white', single(0.45)); // 3
+  state = rollOpeningDie(state, 'black', single(0.45)); // 3
+  state = rollOpeningDie(state, 'white', single(0.95)); // 6
+
+  assertEqual(state.openingRoll, { white: 6, black: null }, "the previous round's tie is cleared, not added to");
+  assertEqual(state.phase, 'opening', 'still waiting on black');
+});
+
+test('rolling twice for the same player is ignored', () => {
+  const first = rollOpeningDie(createInitialState(), 'white', single(0.25)); // 2
+  const again = rollOpeningDie(first, 'white', single(0.95)); // would be 6
+
+  assertEqual(again.openingRoll, { white: 2, black: null }, 'a double tap cannot overwrite a die already showing');
+  assert(again === first, 'and is a no-op rather than a fresh object');
+});
+
+test('an opening die cannot be rolled once the game is under way', () => {
+  let state = createInitialState();
+  state = rollOpeningDie(state, 'white', single(0.25)); // 2
+  state = rollOpeningDie(state, 'black', single(0.75)); // 5
+  const after = rollOpeningDie(state, 'white', single(0.95));
+
+  assert(after === state, 'the phase is over, so there is nothing to roll for');
+});
+
+test('rollOpeningDie does not mutate the state it is given', () => {
+  const state = createInitialState();
+  const before = JSON.stringify(state);
+  rollOpeningDie(state, 'white', single(0.95));
+  assertEqual(JSON.stringify(state), before, 'same purity contract as applyMove');
 });
 
 /* ---- direction ---- */
@@ -1149,6 +1221,55 @@ test('a sparse points array (most points empty) survives a full send/receive rou
 
   assertEqual(room.state, sent, 'a full game state should be byte-for-byte identical after the round trip');
   assertEqual(pipCount(room.state, 'white'), 167, 'and the rules should work on what comes back, not just look equal');
+});
+
+test('a fresh opening state survives a round trip, nulls and all', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  /* The sharpest case of Firebase's null-stripping in this codebase: an
+     untouched opening roll is { white: null, black: null }, which is
+     stored as nothing at all - the key is simply absent on read. */
+  a.sendState(createInitialState());
+  await waitFor(() => room.state);
+
+  assertEqual(room.state.phase, 'opening', 'the phase must survive, or both players get sent back to roll');
+  assertEqual(room.state.openingRoll, { white: null, black: null }, 'and both keys must come back, not vanish with their nulls');
+  assertEqual(room.state.dice, []);
+});
+
+test('half a finished opening round survives a round trip', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  a.sendState(rollOpeningDie(createInitialState(), 'white', () => 0.95)); // white 6, black not yet
+  await waitFor(() => room.state && room.state.openingRoll);
+
+  assertEqual(room.state.openingRoll, { white: 6, black: null }, "black's absent key must read back as not-yet-rolled");
+  assertEqual(room.state.phase, 'opening');
+});
+
+test('a resolved opening survives a round trip with its banner intact', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  let started = rollOpeningDie(createInitialState(), 'white', () => 0.25); // 2
+  started = rollOpeningDie(started, 'black', () => 0.75); // 5
+  a.sendState(started);
+  await waitFor(() => room.state && room.state.phase === 'playing');
+
+  assertEqual(room.state.currentPlayer, 'black');
+  assertEqual(room.state.dice.map((d) => d.value), [2, 5]);
+  assertEqual(room.state.openingRoll, { white: 2, black: 5 }, 'the banner values ride along as ordinary numbers');
 });
 
 test('an empty board (every checker borne off) survives a full send/receive round trip', async () => {
