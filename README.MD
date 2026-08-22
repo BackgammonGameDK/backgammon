@@ -225,6 +225,72 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      `lastActive` timestamp now is what would make cleanup possible later —
      and a day-old abandoned room is exactly the case 5a is about.
 
+7. **Matchmaking lobby** — pair two people who are looking for a game at the
+   same time, instead of requiring one of them to send the other a link.
+   Planned but deliberately not scheduled: unlike items 5 and 6, which
+   remove friction from things the game already does, this adds a
+   capability it doesn't have, and drags the project's trust model along
+   with it. Two things to settle before the code matters.
+
+   **Population.** A queue only works if someone else is in it. This is a
+   personal project shared with friends, so the realistic queue depth is
+   zero nearly all the time — and an empty lobby fails *silently*, which is
+   worse than it sounds: a first-time visitor taps "Find an opponent",
+   waits, nothing happens, and concludes the game is broken. An invite link
+   never does that; it either works or it's visibly obvious the other
+   person hasn't opened it yet. So the honest framing isn't "get matched
+   fast" but "be visible to anyone else who is also looking", which means
+   showing the queue state plainly (*"you're 1 of 1 waiting"*) and keeping
+   the invite link as the primary way in rather than demoting it.
+
+   **Strangers versus the trust model.** The decision recorded under item 2
+   — friend-level trust, each client validating only its own moves, with
+   `database.rules.json` restricting writes to a room whose code you
+   already know rather than to whose turn it is — is exactly what
+   matchmaking invalidates. `sendState` broadcasts whole state snapshots
+   and any seated client may write anything, so a matched stranger can set
+   `winner` to their own colour, move the opponent's checkers, or hand
+   themselves any dice. Nobody does that when you chose your opponent;
+   somebody eventually will when the app chooses for you. Matchmaking is
+   the change that turns a reasonable simplification into an exploitable
+   one.
+
+   **The mechanics themselves are the easy part**, and reuse machinery that
+   already exists. A `/lobby/waiting/<clientId>` entry per searcher;
+   pairing decided by a Firebase transaction, since two players who spot
+   each other simultaneously must not both claim (the same race
+   `claimSeat` already solves, with the same tool); the claimer generates a
+   room code, writes it into both entries, and both clients navigate to
+   `#room=<code>`, from which the existing flow is untouched. Stale entries
+   clean themselves up through `onDisconnect().remove()`, the same idiom
+   `attachPresence` uses, so closing the tab leaves the queue automatically.
+
+   The genuinely new requirement is that `/lobby` be world-readable and
+   world-writable, since there are no accounts — the first thing in the app
+   a stranger can touch. Database rules can validate an entry's *shape* but
+   not its *volume*, so nothing would stop someone flooding the queue.
+
+   Suggested sequence, if it's built:
+   - **7a. Firebase Anonymous Auth.** Every client silently gets a UID — no
+     signup, no build step, one more `-compat.js` script. It's what makes
+     a rule like "you may only write your own queue entry" enforceable
+     rather than aspirational, and nothing else in the lobby's security is
+     real without it.
+   - **7b. The lobby.** The transaction-based pairing above, with honest
+     queue-state UI rather than an indefinite spinner.
+   - **7c. Validate incoming state in `rules.js`.** Rather than trusting a
+     received snapshot, check that it's a legal successor of the state this
+     client already had. `rules.js` is pure and already knows what a legal
+     move is, so this is a self-contained, unit-testable problem in exactly
+     the shape of the rest of that file. It won't stop a determined
+     attacker — they can simply refuse to accept valid states — but it
+     stops casual cheating, and would catch desync bugs as a side effect.
+
+   Finish items 5d and 5e first regardless. 5e collides with this
+   specifically: once both players must roll to start, a stranger who
+   matches and never rolls blocks the game, so matchmaking would need a
+   turn timeout — something the app has nowhere else.
+
 ## Architecture
 
 `rules.js` holds the game state and every rule, as pure functions over a plain
