@@ -95,6 +95,21 @@ The switch-selection branch exists because a click on a different own-color chec
 
 `animateMove(checker, moveFn)` wraps any `appendChild`-based re-parenting (a move is just moving a `.checker` div into a different container) with the FLIP technique: measure position before, perform the DOM move, measure after, apply an inverse `transform` with no transition, then clear it on the next frame with `.checker.animating`'s CSS transition so the browser animates the slide. This only touches `transform`, so it's safe to layer onto the flex-layout-driven structure without other changes. It's called from inside `renderCheckers`'s reconciliation now, not from individual move handlers — any new re-parenting path should go through reconciliation rather than a bare `appendChild`.
 
+### The tab title as a turn cue (`renderDocumentTitle`)
+
+Playing online on a phone otherwise gives no sign that the opponent has moved — you switch to another app, and the only way back to the game is to go and look. The tab's title is the one channel a page still has once it isn't the thing on screen, so it reads `● Your turn — Backgammon` (or `● Your roll` during the opening) whenever the game is waiting on this client, and plain `Backgammon` otherwise.
+
+`titleCue()` is deliberately not "is it my turn": during the opening phase both players may act at once and what's owed is a die, not a move. It returns null for hot-seat, spectators, a finished game, and a room whose opponent hasn't arrived yet — in that last case the room status line already explains the wait.
+
+**Written on every render, with no `visibilitychange` listener and no check on `document.hidden`.** A title is a status indicator, not a notification, so it should simply say what's true; that removes the whole "was the tab hidden when this arrived?" class of edge case, and it clears when the turn passes rather than when the player happens to look. The marker leads because a tab strip truncates from the right.
+
+Two deliberate omissions, both worth knowing before "improving" this:
+
+- **`navigator.vibrate` cannot work here.** The spec has vibration ignored outright while the document is hidden, which is precisely the case worth signalling.
+- **The Notifications API would genuinely reach a backgrounded phone**, but it needs a permission prompt and, on iOS, an installed PWA — a different size of feature. Worth reaching for only if the title proves too quiet.
+
+Its real limit: a mobile browser that discards a backgrounded tab stops running the page at all, so no title update happens either. This helps while you're briefly in another app, not when you return the next day — that case is what seat recovery in `sync.js` is for.
+
 ### Board perspective (`setBoardPerspective`)
 
 Backgammon is played across a board: the player sitting opposite sees their own home board bottom-right and moves toward it. White gets that view by default from the fixed markup, so **an online client seated as Black gets `.black-perspective` on `.board`**, which swaps the two rows. That alone produces the whole mirror — Black's home (19-24) lands bottom-right, their bear-off tray beside it, their bar in the row they re-enter into, and point 1, where their back checkers start, top-right. Horizontal order inside each quadrant is already correct and must not change.
