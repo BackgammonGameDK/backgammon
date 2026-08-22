@@ -12,12 +12,21 @@
 
 globalThis.window = globalThis;
 
-const sessionStore = {};
-globalThis.sessionStorage = {
-  getItem: (k) => (Object.prototype.hasOwnProperty.call(sessionStore, k) ? sessionStore[k] : null),
-  setItem: (k, v) => { sessionStore[k] = String(v); },
-  removeItem: (k) => { delete sessionStore[k]; },
-};
+/* Both web storages, because sync.js uses each for a different job (see
+ * its identity comments): sessionStorage is the per-tab identity, and
+ * localStorage is the cross-tab mirror a returning tab recovers its seat
+ * from. Two separate stores here, not one shared object, precisely
+ * because the difference between them is the thing under test. */
+function fakeStorage() {
+  const store = {};
+  return {
+    getItem: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+}
+globalThis.sessionStorage = fakeStorage();
+globalThis.localStorage = fakeStorage();
 
 let resultsHTML = '';
 globalThis.document = {
