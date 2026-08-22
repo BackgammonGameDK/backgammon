@@ -108,8 +108,11 @@ body {
 .die {
   width: 60px;
   height: 60px;
+  /* Colours live on .die.white/.die.black below; these are the fallback
+     if a die is ever rendered without a player class. */
   background: #f5f5f0;
   border: 2px solid #333;
+  --pip: #222;
   border-radius: 10px;
   padding: 8px;
   display: grid;
@@ -147,12 +150,50 @@ body {
 .die[data-value="6"] .pip:nth-child(6),
 .die[data-value="6"] .pip:nth-child(7),
 .die[data-value="6"] .pip:nth-child(9) {
+  background: var(--pip);
+}
+
+/* The dice belong to whoever rolled them, so they take that player's
+   colours - matching how each player has their own pair in a real set,
+   and giving the turn a second, wordless cue beside the turn indicator.
+   Online that doubles as "is it me?", since you already know your colour.
+   The distinction is pure luminance, so it survives any colour vision
+   deficiency, same reasoning as the blue/orange move highlights.
+
+   Fills and borders track .checker.white/.checker.black rather than being
+   picked separately, the way .off-count[data-owner] already does - one
+   colour per player across the whole board. The one deliberate departure
+   is black's border: a checker sits on the wood board, but dice sit on the
+   page, and #222 on the #2b2b2b page background is very nearly invisible.
+   The border has to carry the whole contrast here, so it's lighter than
+   the checker's #666. */
+.die.white {
+  background: #f5f5f0;
+  border-color: #333;
+  --pip: #222;
+}
+
+.die.black {
   background: #222;
+  border-color: #a0a0a0;
+  --pip: #f0f0f0;
 }
 
 .die.played,
 .die.forfeited {
   opacity: 0.35;
+}
+
+/* A spent die is shown by dimming it, which works on a light die against
+   a dark page but not on a dark one - at 0.35 a black die is
+   indistinguishable from absent, so the cue stops meaning "used" and
+   starts meaning "gone". Dimmed less, and its border dimmed less still,
+   so a spent black die stays legible as a die while still reading as
+   clearly out of play next to an unspent one. */
+.die.black.played,
+.die.black.forfeited {
+  opacity: 0.55;
+  border-color: #6d6d6d;
 }
 
 #turn-indicator {

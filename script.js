@@ -306,9 +306,9 @@ function renderOverflowBadges() {
   }
 }
 
-function createDie(die, usable) {
+function createDie(die, usable, color) {
   const element = document.createElement('div');
-  element.className = 'die';
+  element.className = `die ${color}`;
   element.dataset.value = die.value;
   if (die.played) {
     element.classList.add('played');
@@ -324,7 +324,9 @@ function createDie(die, usable) {
 function renderDice() {
   diceContainer.innerHTML = '';
   state.dice.forEach((die) => {
-    diceContainer.appendChild(createDie(die, canUseDie(state, state.currentPlayer, die.value)));
+    diceContainer.appendChild(
+      createDie(die, canUseDie(state, state.currentPlayer, die.value), state.currentPlayer)
+    );
   });
   rollButton.disabled = !gameStarted || state.dice.length > 0 || Boolean(state.winner) || blockedOnline();
 }
