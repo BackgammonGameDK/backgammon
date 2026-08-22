@@ -184,10 +184,20 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      left the game" instead. Exit deliberately does *not* free the seat:
      seats are never released in this design and 5a's recovery depends on
      that, so returning to the room reclaims the same seat.
-   - **5d. Rejoin the last room from the start screen.** Remember the last
-     room code and offer it as a button on 5b's screen. Falls out of 5a and
-     5c almost for free, and is what actually removes the hand-edit-the-URL
-     step for a returning player.
+   - **5d. Rejoin the last room from the start screen.** ✅ Done. Remember
+     the last room code and offer it as a button on 5b's screen. Falls out
+     of 5a and 5c almost for free, and is what actually removes the
+     hand-edit-the-URL step for a returning player.
+
+     Two things worth recording. The storage read is wrapped in try/catch
+     where `identityFor`'s deliberately isn't: this one runs on *every*
+     page load rather than only when joining a room, and Safari's private
+     mode has historically thrown on storage access — an unguarded read
+     would take the whole app down for someone who only wanted a hot-seat
+     game. And the start panel gained a row, which stopped fitting a
+     landscape phone once the Rejoin button was showing; the landscape
+     breakpoint was tightened so the fullest case fits without scrolling
+     at 300px of height, below any real phone.
    - **5e. Manual opening roll.** `createInitialState()` returns a state that
      already contains the opening roll and both pre-loaded dice, so neither
      player ever rolls for the start — fine as a faithful implementation of
@@ -404,6 +414,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+The start screen now also offers the last room this browser was in — *Rejoin room ABCDEF* — which is what makes Exit safe to press, since leaving an online game would otherwise mean needing the invite link again to get back. It is recomputed each time the screen is shown, so the room Exit just left is the one offered and a mis-tapped Exit is one tap from being undone. A first-time visitor never sees the button at all.
 
 An Exit button then completed the round trip: it leaves the current game — hot-seat or online — and returns to the start screen with the room code cleared from the URL, so getting out of a game no longer means hand-editing the address bar. Leaving an online game also announces itself. A deliberate exit and a dropped connection previously looked identical in the room record (both just clear presence), so the opponent saw "opponent disconnected" either way; a `departed` flag, set only by Exit and cleared whenever that seat reconnects, now distinguishes them and the status line reads "opponent left the game". The seat itself is not freed — seats are never released in this design, and coming back to the room reclaims the same one.
 

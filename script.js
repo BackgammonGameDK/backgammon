@@ -30,6 +30,8 @@ const playOnlineButton = document.querySelector('#play-online-button');
 const startScreenEl = document.querySelector('#start-screen');
 const startHotseatButton = document.querySelector('#start-hotseat-button');
 const startErrorEl = document.querySelector('#start-error');
+const rejoinButton = document.querySelector('#rejoin-button');
+const rejoinCodeEl = document.querySelector('#rejoin-code');
 const roomCodeInput = document.querySelector('#room-code-input');
 const joinRoomButton = document.querySelector('#join-room-button');
 const roomStatusEl = document.querySelector('#room-status');
@@ -627,11 +629,29 @@ function exitToStartScreen() {
   playAgainButton.disabled = false;
   startErrorEl.hidden = true;
   roomCodeInput.value = '';
+  renderStartScreen();
   startScreenEl.hidden = false;
   render();
 }
 
 exitButton.addEventListener('click', exitToStartScreen);
+
+/* Whether to offer the last room back. Recomputed each time the screen is
+   shown rather than once at load, so the code just left behind by Exit is
+   the one offered - a mis-tapped Exit is one tap from being undone. */
+function renderStartScreen() {
+  const code = lastRoomCode();
+  rejoinButton.hidden = !code;
+  rejoinCodeEl.textContent = code || '';
+}
+
+rejoinButton.addEventListener('click', () => {
+  const code = lastRoomCode();
+  if (code) {
+    location.hash = `room=${code}`;
+    startOnline(code);
+  }
+});
 
 function showStartError(text) {
   startErrorEl.textContent = text;
@@ -798,6 +818,7 @@ function handleRoomUpdate(room, color) {
 
 function startOnline(roomCode) {
   currentRoomCode = roomCode;
+  rememberRoom(roomCode);
   leaveStartScreen();
   /* Tells style.css this game has a room status row to make space for.
      Without it .online-area is hidden and the board claims that height
@@ -869,6 +890,8 @@ qrToggleButton.addEventListener('click', () => {
 /* Pasting a full invite link (e.g. .../index.html#room=ABCDEF) straight
    into the address bar still works exactly as before - join-by-code and
    the QR code above are additional ways in, not replacements for this. */
+renderStartScreen();
+
 const roomFromUrl = location.hash.match(/room=([A-Z0-9]{6})/i);
 if (roomFromUrl) {
   startOnline(roomFromUrl[1].toUpperCase());

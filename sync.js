@@ -32,6 +32,36 @@ const CLIENT_ID_PREFIX = 'bg:client:';
    other while debugging. */
 const RECOVERY_ID_PREFIX = 'bg:seat:';
 
+/* The most recent room this browser joined, offered back on the start
+   screen so a player who closed the tab can get back in without the
+   invite link. One value, not one per room - "the room I was in" is
+   singular, and a list would be a history feature nobody asked for. */
+const LAST_ROOM_KEY = 'bg:last-room';
+
+/* Guarded, unlike identityFor's storage access, for a reason worth
+   stating: identityFor only runs when someone actually joins a room,
+   whereas lastRoomCode runs on *every* page load to decide whether the
+   start screen shows a Rejoin button. Safari's private mode has
+   historically thrown on storage access, and a throw here would take the
+   whole app down for a visitor who only ever wanted a hot-seat game and
+   never touched storage before this feature existed. Losing the Rejoin
+   button is an acceptable failure; losing the game is not. */
+function rememberRoom(roomCode) {
+  try {
+    localStorage.setItem(LAST_ROOM_KEY, roomCode);
+  } catch (error) {
+    /* no rejoin offer next time, nothing else affected */
+  }
+}
+
+function lastRoomCode() {
+  try {
+    return localStorage.getItem(LAST_ROOM_KEY);
+  } catch (error) {
+    return null;
+  }
+}
+
 /* Short, easy to read aloud or type into a second device. Skips 0/O and
    1/I, which are the pairs people actually mistype. Six characters (up
    from Stage C's four) because a room now only needs to be found by
