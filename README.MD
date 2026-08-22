@@ -225,13 +225,16 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
 6. Further online-play UX, noted during the same review. Independent of each
    other and of the stages above, listed roughly by value per unit of effort.
    Separate from the playtest findings in item 3, which are still open too.
-   - **Draw the board from Black's perspective online.** Black currently
-     plays on a board laid out from White's point of view, moving "upward"
-     toward a home board in the top right. Standard implementations orient
-     the board so your own checkers move toward your own home. This is purely
-     a rendering concern — the absolute 1-24 numbering in `rules.js` stays
-     exactly as it is — so it fits the existing state/DOM split cleanly, and
-     it is probably the largest remaining online-play win after item 5.
+   - ~~**Draw the board from Black's perspective online.**~~ ✅ Done. Black
+     played on a board laid out from White's point of view, moving "upward"
+     toward a home board in the top right; a `.black-perspective` class on
+     `.board` now swaps the two rows for a client seated as Black, which is
+     the whole mirror. Purely a rendering concern, as predicted — the
+     absolute 1-24 numbering in `rules.js` is untouched, and two clients in
+     one room were verified to hold byte-identical `state` while their
+     boards differ. Done with flex ordering rather than a transform on
+     purpose: a `scaleY(-1)` would invert the coordinate space the FLIP move
+     animation measures in and mirror the count badges' text.
    - **A "your turn" cue for a backgrounded tab.** Playing online on a phone
      gives no signal at all that the opponent has moved. A `document.title`
      change (and optionally `navigator.vibrate`) is cheap and aimed squarely
@@ -423,6 +426,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+Black now sees the board from their own side online. Backgammon is played across a board — the player opposite has their home board bottom-right and moves toward it — but Black had been playing on White's layout, moving "upward" toward a home board in the far corner. A class on `.board` swaps the two rows for a client seated as Black, which produces the entire mirror at once: home bottom-right, bear-off tray beside it, bar in the row they re-enter into, and their back checkers top-right. The rules never learn about it — both players' state stays byte-identical while their screens differ, so a move means the same point on both sides. It is done by reordering rather than by rotating the board, because a transform would invert the coordinate space the checker-slide animation measures in and mirror the count badges' text along with everything else.
 
 The opening roll is now the players' to make, completing the original set of three complaints. A fresh game contains no dice at all: each player throws one die, the higher starts, and a tie stays on screen — both dice showing the same number — until somebody rolls again. Online, either player may roll first and each is told about their own die ("You rolled 3 — waiting for your opponent"); hot-seat steps through White then Black on the one shared button. `state.phase` distinguishes the two phases rather than the phase being inferred from the roll's contents. The per-player dice colours arrived just in time to carry this: during the opening you see one white die and one black die side by side, which explains the procedure without a word of instruction.
 

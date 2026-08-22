@@ -26,7 +26,7 @@ Online play needs the Firebase SDK to actually reach the network — verifying i
 
 ### Board numbering (the key mental model)
 
-Points are numbered **1-24 absolute**, not per-player relative. White's home board is 1-6 and White moves toward *decreasing* numbers; Black's home board is 19-24 and Black moves toward *increasing* numbers. This single convention is threaded through everything:
+Points are numbered **1-24 absolute**, not per-player relative — including when the board is drawn from Black's side (see Board perspective below); the numbering never flips, only the pixels do. White's home board is 1-6 and White moves toward *decreasing* numbers; Black's home board is 19-24 and Black moves toward *increasing* numbers. This single convention is threaded through everything:
 
 - `isValidMove` derives legal direction from a checker's color and this numbering.
 - `entryPoint(color, dieValue)` maps a die roll to a bar re-entry point: `25 - dieValue` for White, `dieValue` for Black — i.e. the bar acts as position "25" for White and position "0" for Black.
@@ -94,6 +94,21 @@ The switch-selection branch exists because a click on a different own-color chec
 ### Move animation
 
 `animateMove(checker, moveFn)` wraps any `appendChild`-based re-parenting (a move is just moving a `.checker` div into a different container) with the FLIP technique: measure position before, perform the DOM move, measure after, apply an inverse `transform` with no transition, then clear it on the next frame with `.checker.animating`'s CSS transition so the browser animates the slide. This only touches `transform`, so it's safe to layer onto the flex-layout-driven structure without other changes. It's called from inside `renderCheckers`'s reconciliation now, not from individual move handlers — any new re-parenting path should go through reconciliation rather than a bare `appendChild`.
+
+### Board perspective (`setBoardPerspective`)
+
+Backgammon is played across a board: the player sitting opposite sees their own home board bottom-right and moves toward it. White gets that view by default from the fixed markup, so **an online client seated as Black gets `.black-perspective` on `.board`**, which swaps the two rows. That alone produces the whole mirror — Black's home (19-24) lands bottom-right, their bear-off tray beside it, their bar in the row they re-enter into, and point 1, where their back checkers start, top-right. Horizontal order inside each quadrant is already correct and must not change.
+
+**Presentation only.** `rules.js` numbers points 1-24 absolutely and neither knows nor cares who is looking, so both players' `state` stays byte-identical while their screens differ — verified directly, by hashing `state` on two clients in one room and confirming the hashes match while one board is flipped. That is also what keeps a move meaning the same point on both sides: Black playing 1→4 puts a checker on absolute point 4, and White sees it there.
+
+**Done with flex ordering (`column-reverse`), never a transform.** A `scaleY(-1)` or `rotate(180deg)` would give the same picture, but it inverts the coordinate space `animateMove`'s FLIP measurement works in, so every checker would slide the wrong way vertically — and it would mirror the count badges' text too. Reordering costs nothing and leaves both alone. If you ever reach for a transform here, that is the reason not to.
+
+Two consequences worth knowing:
+
+- With the rows swapped, each point sits on the opposite edge, so `.point-down` takes on `.point-up`'s styling and vice versa — triangle direction, flex direction, and which padding it uses. The overflow badge follows for free, since `renderOverflowBadges` appends it last and last-in-flex-order is the narrow tip either way.
+- **`barContainers` keys on the bar's `data-owner`, not on which row it sits in.** It used to select `.board-row.top .bar-checkers`; once the rows can swap, a selector phrased in terms of position means the wrong bar.
+
+Hot-seat and spectators keep White's view — with two people at one screen there is no "your side" to take, and a spectator has no seat. `setBoardPerspective` is idempotent by construction (`classList.toggle` with an explicit boolean), which matters because `handleRoomUpdate` calls it on every room change rather than only the first, and `exitToStartScreen` resets it **outside** its online branch: that function restores the screen to what a fresh visit would find, and that shouldn't depend on how the board came to be flipped.
 
 ### Responsive layout (`style.css`, `script.js`)
 

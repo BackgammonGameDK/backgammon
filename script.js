@@ -47,11 +47,14 @@ const confettiLayer = document.querySelector('#confetti-layer');
 const celebrationMessageEl = document.querySelector('#celebration-message');
 const playAgainButton = document.querySelector('#play-again-button');
 
-/* White re-enters on points 19-24 (top row) and Black on 1-6 (bottom row),
-   so each colour waits on the bar nearest where it will come back in. */
+/* White re-enters on points 19-24 and Black on 1-6, so each colour waits
+   on the bar nearest where it will come back in. Keyed on the bar's owner
+   rather than which row it sits in: the two rows swap places when the
+   board is drawn from Black's side (see setBoardPerspective), and a
+   selector that said "top row" would then mean the wrong bar. */
 const barContainers = {
-  white: document.querySelector('.board-row.top .bar-checkers'),
-  black: document.querySelector('.board-row.bottom .bar-checkers'),
+  white: document.querySelector('.bar[data-owner="white"] .bar-checkers'),
+  black: document.querySelector('.bar[data-owner="black"] .bar-checkers'),
 };
 
 const offContainers = {
@@ -457,6 +460,25 @@ function clearHighlights() {
 
 /* The selection is a board location, not a particular checker element -
    checkers are interchangeable, so the top one of the stack stands in for it. */
+/* Which side of the board this client is sitting on. Black gets the board
+   drawn from their own side - home bottom-right, moving toward it - which
+   is how the game is actually played and how every other implementation
+   presents it; without this, Black plays on White's board, moving
+   "upward" toward a home board in the far corner.
+
+   Presentation only. rules.js numbers points 1-24 absolutely and neither
+   knows nor cares who is looking, so both players' `state` stays
+   byte-identical while their screens differ - which is also what keeps a
+   move meaning the same point on both sides.
+
+   Hot-seat and spectators keep White's view: with two people at one
+   screen there is no "your side" to take, and a spectator has no seat.
+   Idempotent by construction, which matters because handleRoomUpdate
+   calls it on every room change, not just the first. */
+function setBoardPerspective(color) {
+  board.classList.toggle('black-perspective', color === 'black');
+}
+
 function renderSelection() {
   clearHighlights();
   if (selectedFrom === null) {
@@ -712,6 +734,13 @@ function exitToStartScreen() {
     document.body.classList.remove('online');
   }
 
+  /* Back to White's view - whatever comes next (a hot-seat game, or a room
+     where this client is White) is drawn that way until a seat says
+     otherwise. Outside the online branch above deliberately: this function
+     restores the screen to what a fresh visit would find, and that should
+     not depend on how the board came to be flipped. */
+  setBoardPerspective(null);
+
   history.replaceState(null, '', location.pathname + location.search);
 
   gameStarted = false;
@@ -908,6 +937,7 @@ function renderRoomStatus(room) {
 function handleRoomUpdate(room, color) {
   onlineColor = color;
   latestRoom = room;
+  setBoardPerspective(color);
   renderRoomStatus(room);
 
   if (room.state == null) {
