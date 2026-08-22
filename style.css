@@ -504,6 +504,42 @@ body {
   background: #7d4e2d;
 }
 
+/* Roll and Undo share one row. Width is not budgeted anywhere - only
+   height is (see --chrome) - so putting a second control beside Roll costs
+   the board nothing, whereas stacking it underneath would have. */
+.turn-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Reads as the secondary action it is - outlined rather than filled, and
+   narrower - while matching Roll's height to the pixel. Hence 9px of
+   padding against Roll's 10px: the 1px border on each side makes up the
+   difference. That is not a typo. --chrome is a hand-measured constant
+   that assumes this row's height, so a button 2px taller than the one it
+   sits beside would quietly make the real chrome exceed the budget. */
+#undo-button {
+  padding: 9px 15px;
+  font-size: 16px;
+  color: #ccc;
+  background: transparent;
+  border: 1px solid #6b4226;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#undo-button:hover:not(:disabled) {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+#undo-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 #roll-button {
   padding: 10px 24px;
   font-size: 16px;

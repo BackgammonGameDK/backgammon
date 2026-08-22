@@ -95,6 +95,22 @@ The switch-selection branch exists because a click on a different own-color chec
 
 `animateMove(checker, moveFn)` wraps any `appendChild`-based re-parenting (a move is just moving a `.checker` div into a different container) with the FLIP technique: measure position before, perform the DOM move, measure after, apply an inverse `transform` with no transition, then clear it on the next frame with `.checker.animating`'s CSS transition so the browser animates the slide. This only touches `transform`, so it's safe to layer onto the flex-layout-driven structure without other changes. It's called from inside `renderCheckers`'s reconciliation now, not from individual move handlers — any new re-parenting path should go through reconciliation rather than a bare `appendChild`.
 
+### Taking a move back (`turnHistory`, `undoLastMove`)
+
+Mis-taps are easy on a phone-sized board, so the last move of the current turn can be taken back, restoring both the board and the die it consumed.
+
+`turnHistory` is a stack in `script.js` and **deliberately not part of `state`**: an undo stack is a UI affordance, not game data, and putting it in the state object would broadcast one player's deliberations to the other and drag it through serialization for nothing.
+
+**Each entry keeps the state from before its move *and* a JSON snapshot of the state immediately after it.** The second is the safety catch: `canUndo()` only offers an undo while the live board still equals that snapshot. A history left stale by anything else — the opponent hitting Restart mid-turn being the dangerous one — therefore can't be committed and resurrect a dead board. If the comparison ever fails for a benign reason it fails *safe*, disabling Undo rather than doing the wrong thing. `pruneUndoHistory()` (called from `render()`, so every state-changing path passes through it) additionally drops a history belonging to a turn that is no longer current, whoever ended it.
+
+Three deliberate limits:
+
+- **Never during the opening phase.** Undoing a die you rolled to decide who starts is just re-rolling, which is cheating — the one case where undo would change fairness rather than convenience.
+- **Never once the turn has ended** (`recordUndoPoint` clears the stack instead of pushing). Online the opponent may already be acting on it, and even in hot-seat that would mean un-ending a turn rather than un-making a move. Picking the dice up ends the turn in the real game too.
+- **Online, an undo broadcasts** and the opponent watches the checker go back. That is what taking a move back looks like across a real board, and it is the honest behaviour given every move is already broadcast as it is made. Holding moves locally until the turn ended would mean rewriting the `commitState`/`resolveTurn` contract everything else rests on.
+
+The button shares one flex row with Roll rather than taking a row of its own — a new row in `.dice-area` would change `--chrome` and silently shrink the board. Its padding is `9px` against Roll's `10px` because its 1px border makes up the difference: **the row must be exactly as tall as Roll alone**, or the real chrome quietly exceeds the hand-measured budget. Verified by measurement (board bottom lands on the same pixel as before), not by eye.
+
 ### The tab title as a turn cue (`renderDocumentTitle`)
 
 Playing online on a phone otherwise gives no sign that the opponent has moved — you switch to another app, and the only way back to the game is to go and look. The tab's title is the one channel a page still has once it isn't the thing on screen, so it reads `● Your turn — Backgammon` (or `● Your roll` during the opening) whenever the game is waiting on this client, and plain `Backgammon` otherwise.
