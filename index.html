@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=42">
+  <link rel="stylesheet" href="style.css?v=43">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -29,7 +29,13 @@
       </div>
     </div>
     <div class="dice" id="dice"></div>
-    <button id="roll-button">Roll</button>
+    <!-- One row, not two: a new row in .dice-area would change the board's
+         --chrome budget and silently shrink it. Undo is sized to match
+         Roll's height so the row is exactly as tall as it was. -->
+    <div class="turn-controls">
+      <button id="roll-button">Roll</button>
+      <button id="undo-button" disabled>Undo</button>
+    </div>
     <div id="message"></div>
     <div id="game-over"></div>
     <div id="rotate-hint">Rotate your device for a bigger board</div>
@@ -141,10 +147,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=42"></script>
-  <script src="qrcode-generator.js?v=42"></script>
-  <script src="rules.js?v=42"></script>
-  <script src="sync.js?v=42"></script>
-  <script src="script.js?v=42"></script>
+  <script src="firebase-config.js?v=43"></script>
+  <script src="qrcode-generator.js?v=43"></script>
+  <script src="rules.js?v=43"></script>
+  <script src="sync.js?v=43"></script>
+  <script src="script.js?v=43"></script>
 </body>
 </html>

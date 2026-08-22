@@ -246,9 +246,17 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      Note the title's own limit: a browser that discards a backgrounded tab
      stops running the page, so this helps while you are briefly in another
      app, not when you return the next day.
-   - **Undo the last move within a turn.** Mis-taps are common on a
-     phone-sized board. `applyMove` never mutates its input, so a per-turn
-     stack of prior states is straightforward.
+   - ~~**Undo the last move within a turn.**~~ ✅ Done. The stack turned out
+     to be the easy half; the interesting part was making it safe. Each
+     entry stores the state before its move *and* a snapshot of the state
+     after it, and an undo is only offered while the live board still
+     matches that snapshot — so a history left stale by the opponent
+     restarting mid-turn can never be committed and resurrect a dead board.
+     Undo is refused during the opening phase (that would be re-rolling for
+     who starts) and once a turn has ended (the opponent may already be
+     acting on it). Online it broadcasts, so the opponent sees the checker
+     go back, which is what taking a move back looks like across a real
+     board.
    - **Room lifecycle.** Nothing ever deletes `/rooms/<code>`, so rooms
      accumulate indefinitely. Not urgent at friend scale, but recording a
      `lastActive` timestamp now is what would make cleanup possible later —
@@ -478,6 +486,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+The last move of a turn can now be taken back, restoring the board and the die it used — mis-taps being easy on a phone-sized board. The undo stack lives in the UI rather than in the game state, since it is nobody else's business, and each entry carries a snapshot of what the board looked like just after its move: an undo is only offered while the live board still matches, so a history left stale by the opponent restarting mid-turn can never be committed. It is refused during the opening roll, which would otherwise be a way to re-roll for who starts, and once a turn has ended. The button shares Roll's row rather than taking one of its own, and is padded to match Roll's height to the pixel, because a taller row would quietly eat into the board's hand-measured height budget.
 
 The tab title now carries the turn, too: while a game is waiting on you it reads "● Your turn — Backgammon", or "● Your roll" during the opening, and goes back to plain once you have played. It is written on every render rather than only when the tab is hidden — a title is a status indicator, not a notification, so it says what is true and clears itself when the turn passes. Vibration was considered and dropped, being ignored by the browser precisely while the document is hidden.
 

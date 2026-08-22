@@ -19,6 +19,7 @@
 const board = document.querySelector('.board');
 const diceContainer = document.querySelector('#dice');
 const rollButton = document.querySelector('#roll-button');
+const undoButton = document.querySelector('#undo-button');
 const restartButton = document.querySelector('#restart-button');
 const exitButton = document.querySelector('#exit-button');
 const gameOverEl = document.querySelector('#game-over');
@@ -130,6 +131,20 @@ let state = idleState();
 let gameStarted = false;
 let selectedFrom = null;
 let hintsEnabled = false;
+/* Moves made so far this turn, oldest first, so the last one can be taken
+   back. Local to this tab and deliberately not part of `state`: an undo
+   stack is a UI affordance, not game data, and putting it in the state
+   object would broadcast one player's deliberations to the other and drag
+   it through serialization for nothing.
+
+   Each entry keeps the state from *before* its move and a snapshot of what
+   the state looked like immediately *after* it. The second is the safety
+   catch: an undo is only offered while the live board still matches it, so
+   a history left stale by anything else that happened - the opponent
+   restarting mid-turn being the dangerous one - can never be committed and
+   resurrect a dead board. If the comparison ever fails for some benign
+   reason it fails safe, disabling Undo rather than doing the wrong thing. */
+let turnHistory = [];
 /* Whether the room-code chip's popover (#room-details) has been opened
    while collapsed - see renderRoomStatus. Irrelevant, and ignored, while
    the row isn't collapsed at all. */
@@ -560,6 +575,8 @@ function renderSelection() {
 }
 
 function render() {
+  pruneUndoHistory();
+  undoButton.disabled = !canUndo();
   renderDocumentTitle();
   renderCheckers();
   renderOffCounts();
@@ -607,6 +624,53 @@ function resolveTurn(next) {
   return next;
 }
 
+/* Records a move as undoable, unless it was the move that ended the turn.
+   Once the turn has passed there is nothing to take back: online the
+   opponent may already be acting on it, and even in hot-seat "undo" would
+   mean un-ending a turn rather than un-making a move. Picking the dice up
+   ends the turn in the real game too. */
+function recordUndoPoint(before, after) {
+  if (after.currentPlayer !== before.currentPlayer || after.winner) {
+    turnHistory = [];
+    return;
+  }
+  turnHistory.push({ player: before.currentPlayer, before, afterJSON: JSON.stringify(after) });
+}
+
+/* Drops a history belonging to a turn that is no longer the current one -
+   whoever ended it, and whether this client or the opponent caused the
+   change. Called from render(), so every path that can change the state
+   passes through it. */
+function pruneUndoHistory() {
+  if (turnHistory.length > 0 && turnHistory[0].player !== state.currentPlayer) {
+    turnHistory = [];
+  }
+}
+
+function canUndo() {
+  if (!gameStarted || state.winner || state.phase !== 'playing' || blockedOnline()) {
+    return false;
+  }
+  const last = turnHistory[turnHistory.length - 1];
+  return Boolean(last) && JSON.stringify(state) === last.afterJSON;
+}
+
+/* Online this broadcasts like any other change, so the opponent watches the
+   checker go back - which is what taking a move back looks like across a
+   real board, and is the honest behaviour given every move is already
+   broadcast as it is made. */
+function undoLastMove() {
+  if (!canUndo()) {
+    return;
+  }
+  const { before } = turnHistory.pop();
+  selectedFrom = null;
+  messageEl.textContent = '';
+  commitState(before);
+}
+
+undoButton.addEventListener('click', undoLastMove);
+
 function attemptMove(from, to, targetElement) {
   const result = applyMove(state, state.currentPlayer, from, to);
 
@@ -616,7 +680,9 @@ function attemptMove(from, to, targetElement) {
   }
 
   selectedFrom = null;
-  commitState(result.state.winner ? result.state : resolveTurn(result.state));
+  const next = result.state.winner ? result.state : resolveTurn(result.state);
+  recordUndoPoint(state, next);
+  commitState(next);
 }
 
 function canSelect(from) {
@@ -724,6 +790,7 @@ function restartGame() {
     return;
   }
   selectedFrom = null;
+  turnHistory = [];
   messageEl.textContent = '';
   commitState(createInitialState());
 }
@@ -802,6 +869,7 @@ function exitToStartScreen() {
   gameStarted = false;
   state = idleState();
   selectedFrom = null;
+  turnHistory = [];
   celebrationShownFor = null;
   celebrationEl.hidden = true;
   messageEl.textContent = '';
