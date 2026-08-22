@@ -977,6 +977,35 @@ test('a recovery candidate is scoped to its own room', () => {
   assert(returning.recoveredClientId !== a.clientId, 'and never room A, which may still be live in another tab');
 });
 
+/* ---- sync.js: the last room joined (stage 5d) ----
+ *
+ * What the start screen's Rejoin button is built on. Deliberately one
+ * value rather than one per room: "the room I was in" is singular, and a
+ * list would be a history feature nobody asked for.
+ */
+
+test('the most recent room joined is the one remembered', () => {
+  const first = freshRoomCode();
+  const second = freshRoomCode();
+
+  rememberRoom(first);
+  assertEqual(lastRoomCode(), first, 'a room joined is remembered');
+
+  rememberRoom(second);
+  assertEqual(lastRoomCode(), second, 'and a later room replaces it rather than adding to a list');
+});
+
+test('remembering a room does not disturb a seat identity', () => {
+  const code = freshRoomCode();
+  const identity = identityFor(code);
+
+  rememberRoom(code);
+
+  assertEqual(localStorage.getItem(RECOVERY_ID_PREFIX + code), identity.clientId, 'the seat mirror is untouched');
+  assertEqual(sessionStorage.getItem(CLIENT_ID_PREFIX + code), identity.clientId, 'and so is the per-tab identity');
+  assertEqual(lastRoomCode(), code, 'while the last-room value is its own separate key');
+});
+
 /* ---- sync.js: leaving on purpose vs. losing the connection (stage 5c) ----
  *
  * Both end with the same presence entry gone, so the room record alone
