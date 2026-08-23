@@ -80,10 +80,16 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      ✅ Done. `showMessage` gained a sticky mode that skips the three-second
      clear, and the skipped-turn notice uses it: it now waits for the
      player's next action instead of a clock.
-   - **The board is keyboard/screen-reader unreachable.** Only 6 controls
-     (Restart, Hints, Play Online, room code, Join, Roll) are in the
-     accessible tree; points and checkers are plain unlabeled `div`s with
-     no role or `tabindex`, so a keyboard-only player can roll but not move.
+   - **The board is keyboard/screen-reader unreachable.** The buttons are
+     all real `<button>`s and reachable — Find an opponent, Play on this
+     device, Rejoin, the code field and Join, Hints, Roll, Undo, Exit,
+     Restart — but the board itself is not: points and checkers are plain
+     unlabeled `div`s with no role or `tabindex`, so a keyboard-only player
+     can roll the dice and never move a checker. The only item left in this
+     list, and not really a papercut: closing it means a focus order across
+     24 points, roles and labels that say what each point holds, and a
+     select-then-move keyboard flow — a feature the size of the rest of
+     this list combined, and it wants its own test plan.
    - ~~**Latent:** `animateMove`'s FLIP transform cleanup.~~ ✅ Done — it
      now also clears on a timeout, rather than depending on
      `requestAnimationFrame` and `transitionend`, neither of which fires in
@@ -577,6 +583,13 @@ These are conveniences layered on top of the project, not part of it — the gam
 itself still has no build step and no dependencies.
 
 ## Status
+
+*A running log rather than a summary, and not strictly ordered: the oldest
+entries are at the top, but everything since the multiplayer work was added
+newest-first below them. Where a later entry supersedes an earlier one, the
+earlier is marked. For what is true right now, Architecture and CLAUDE.md
+are the reliable places.*
+
 ✅ Core build plan complete — stages 1-7 (including 5a and 5b) are all done: static board, checker movement, dice rolling, move legality, turn structure, dimmed used dice, bar re-entry, bearing off, win detection, and restart. The game is fully playable end to end.
 
 Since then: Restart was separated from Roll to prevent mis-clicks, a "Hints" toggle was added to highlight a selected checker's legal destinations on request, a checker with no legal moves can no longer be selected at all, a pip count display (shown when Hints is enabled) was added, checkers now animate (slide) into place instead of jumping, the legal/invalid highlight colors were made colorblind-safe (blue solid ring vs. orange dashed ring, instead of red/green), black checkers got a lighter border so they're visible on the bar/off-tray, and the legal-target blue was softened to fit the board's wood-tone palette better.
@@ -617,7 +630,7 @@ An Exit button then completed the round trip: it leaves the current game — hot
 
 The hot-seat board then grew by 57px (~9%) at desktop sizes. `--chrome`, the board's vertical budget, is measured against the tallest state the layout takes — an online game, where `.online-area` holds the room status row — so that the board can never overrun the viewport. A hot-seat game has no room status, so that row is now hidden outright, and `--online-row` (measured per breakpoint, the same by-hand way `--chrome` is) is added back to the budget for hot-seat only. Landscape phones deliberately reclaim nothing, since there the chrome sits *beside* the board and its height was never part of the budget at all. The board's bottom edge lands in the same place in both modes, which is what confirms the reclaimed figure is exactly right rather than merely bigger.
 
-The game now opens on a start screen — play on this device, start an online game, or join one by code — instead of dropping straight into a hot-seat game with "Play Online" buried among the in-game buttons. Nothing is rolled until a mode is chosen: the board behind the screen is a backdrop with no dice, and picking a mode is what creates the real state, so the first dice you see are ones your own choice produced. An invite link or QR scan carrying `#room=` skips the screen entirely and opens straight into the game.
+The game now opens on a start screen — at this point offering play on this device, start an online game, or join one by code, with equal weight; **rebalanced later**, once the lobby made finding an opponent the ordinary route in — instead of dropping straight into a hot-seat game with "Play Online" buried among the in-game buttons. Nothing is rolled until a mode is chosen: the board behind the screen is a backdrop with no dice, and picking a mode is what creates the real state, so the first dice you see are ones your own choice produced. An invite link or QR scan carrying `#room=` skips the screen entirely and opens straight into the game.
 
 A player returning to an online game after their mobile browser discarded the backgrounded tab now gets their seat back instead of being demoted to spectator. The tab identity in `sessionStorage` is gone by then, so the client id is mirrored to `localStorage` too and offered to the seat-claiming transaction as a candidate — honoured only if nobody is currently sitting in that seat, which is what keeps a second tab from stealing a live one. Written test-first: 11 tests, seven red until the fix landed.
 
@@ -625,11 +638,11 @@ Online play now tracks presence (see Architecture): the room status line tells "
 
 Joining a room got friendlier: a "Join" field next to "Play Online" takes a typed 6-character room code directly, and a "QR" toggle renders a scannable code for the current link (via a small vendored, dependency-free QR generator — no network call, no external service). Pasting the full invite link still works unchanged; these are additional ways in, not replacements.
 
-A seated player can no longer roll or move before an opponent has actually joined — previously the room creator could start playing solo, since the only existing check was whose turn it was. And who goes first is no longer hardcoded to White: each side rolls one die (a tie rerolls automatically), the higher roll starts, and that player's first turn is pre-loaded with both individual rolls as its dice — the standard backgammon opening procedure, shown in the turn indicator ("opening roll: White 6, Black 3") and applying to hot-seat play too, not just online.
+A seated player can no longer roll or move before an opponent has actually joined — previously the room creator could start playing solo, since the only existing check was whose turn it was. And who goes first is no longer hardcoded to White: each side rolls one die, the higher roll starts, and that player's first turn is pre-loaded with both individual rolls as its dice — the standard backgammon opening procedure, shown in the turn indicator ("opening roll: White 6, Black 3") and applying to hot-seat play too, not just online. At this point the roll was generated with the board and a tie rerolled itself; **superseded later**, when the roll became the players' own to make and a tie began waiting on screen for somebody to roll again.
 
 The board grows further on desktop now: it was already scaling to fit the window (see above), but on a typical wide-but-not-tall monitor the limit was available *height*, not width, leaving visible unused space on either side. The turn indicator, Hints checkbox, and pip count — three stacked rows — now collapse into one row on screens wider than 900px, freeing up the vertical room the board's sizing math immediately claims. Phones are untouched; they were already width-bound, not height-bound.
 
-The room-status row ("Room XQ57M4 · You are White", Copy link, QR) used to stay put for the whole game, even though it's only actually useful before an opponent has joined. It now collapses to a small room-code chip the moment there's nothing left to report (opponent present and connected), reclaiming that space during play; clicking the chip reopens the same info and buttons as a popover, same as the QR code already floats rather than displacing the board.
+The room-status row ("Room XQ57M4 · You are White", Copy link, QR) used to stay put for the whole game, even though it's only actually useful before an opponent has joined. It was made to collapse to a small room-code chip the moment there was nothing left to report, reclaiming that space during play, with the chip reopening the full row as a popover. **Superseded later**: the row is now hidden outright rather than collapsed, and the board takes the height — the code is in the address bar if anyone wants it, so the chip was spending a row on something already available.
 
 Landscape phones got the same board-growing treatment as desktop, but the opposite layout move: rather than collapsing rows into one to free up height (desktop's problem), the dice/status/Roll chrome moves into a sidebar to the *left* of the board instead of sitting in a row above it — a landscape phone is height-limited, so a row above the board was spending the one dimension already in short supply. Freeing that lets the board's existing height-driven sizing grow it substantially; flexbox's normal shrink behavior keeps it from overflowing a landscape window too narrow for that, no extra sizing math needed the way `--chrome` needed for the height axis. Restart joined that sidebar too (moved to the end, with extra spacing) rather than staying fixed in its usual corner — a fixed corner the board doesn't know is spoken for was quietly capping how big it could grow, on top of briefly (and worse) overlapping it outright before that.
 
