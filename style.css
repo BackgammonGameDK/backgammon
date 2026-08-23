@@ -1065,11 +1065,45 @@ button,
   touch-action: manipulation;
 }
 
+/* A button styled as the plain line of text it used to be - the dismiss
+   × is the only thing marking it as pressable, and the whole row is the
+   target so a thumb doesn't have to find that ×. `display: none` here is
+   the off switch for every screen but a portrait phone; the media query
+   near the bottom of this file turns it on. */
 #rotate-hint {
   display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  /* Vertical padding buys a touch target without moving anything: a
+     portrait phone is width-bound, so .board's height-driven max-width
+     isn't what's capping it there and --chrome doesn't need re-measuring
+     for this. Check that again if the hint is ever shown at a breakpoint
+     where the board *is* height-bound. */
+  padding: 4px 0;
+  background: none;
+  border: none;
+  font-family: inherit;
   font-size: 13px;
   color: #e0a030;
   font-style: italic;
+  cursor: pointer;
+}
+
+#rotate-hint-close {
+  font-size: 16px;
+  font-style: normal;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+/* The media query below sets `display: flex` on this same ID, and an
+   author rule outranks the user-agent `[hidden] { display: none }` no
+   matter which one comes later - the same cascade trap #room-status and
+   friends carry a note about. ID + attribute beats ID alone, so this is
+   what actually makes the hidden attribute work. */
+#rotate-hint[hidden] {
+  display: none;
 }
 
 /* ---- Wide screens ------------------------------------------------------
@@ -1264,7 +1298,7 @@ button,
    checkers, so telling it to rotate would be bad advice. */
 @media (max-width: 600px) and (orientation: portrait) {
   #rotate-hint {
-    display: block;
+    display: flex;
   }
 }
 
