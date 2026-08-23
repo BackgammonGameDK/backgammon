@@ -365,8 +365,27 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      a rule like "you may only write your own queue entry" enforceable
      rather than aspirational. Best treated as the hardening step the
      lobby earns once it has proved it attracts anyone at all.
-   - **7b. The lobby.** The transaction-based pairing above, with honest
-     queue-state UI rather than an indefinite spinner.
+   - **7b. The lobby.** ✅ Done. The transaction-based pairing above, with
+     honest queue-state UI rather than an indefinite spinner. "Start an
+     online game" became "Find an opponent", and now looks for someone
+     already waiting before starting a room of its own; the waiting line
+     reads "waiting; nobody else is searching" or "…; 1 other searching",
+     with Copy link and QR beside it so an empty queue degrades into the
+     invite flow exactly as planned.
+
+     Two findings worth keeping. A claim must **not** abort its transaction
+     when the current value is null: Firebase runs the update function
+     optimistically against its cache before it has the server's value, so
+     null there means "not fetched yet", not "already taken" — aborting
+     kills the transaction before it reaches the server and claiming
+     silently never works. It cost a live debugging session precisely
+     because no fake that hands over the true value on the first call can
+     reproduce it, so `createFakeDatabase` now simulates that optimistic
+     pass and honours an abort during it; re-introducing the bug fails four
+     tests. And the longer waiting text pushed `#room-status` 2px taller at
+     narrow widths, so `--chrome` and `--online-row` were re-measured
+     together at that breakpoint — which leaves a hot-seat board unchanged,
+     since it spends the difference between them.
    - **7c. Validate incoming state in `rules.js`.** Rather than trusting a
      received snapshot, check that it's a legal successor of the state this
      client already had. `rules.js` is pure and already knows what a legal
@@ -545,6 +564,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+Two people who both press "play online" now end up in the same game. Previously they each got a random room code and waited for each other forever; the lobby advertises rooms wanting a second player, so the first searcher creates a room and waits in it, and the next one joins them. The room is created when you start searching rather than when you are matched, which means one waiting state covers both ways an opponent can arrive — claimed from the queue, or through the invite link sitting right beside the waiting text. An empty queue says so plainly rather than spinning.
 
 Restart now asks twice. It wipes a game in progress for both players, either of them can press it at any time, and unlike Exit it cannot be undone — the start screen can offer a room back, but not a board. Mid-game it arms on the first press and acts on the second, disarming after four seconds or on any state change, since a confirmation armed over one board should not still be live over a different one. A finished game restarts on the first press, and Play Again never asks at all. What this fixes is the mis-tap; it does not give the other player a say, which would need a restart request they accept.
 
