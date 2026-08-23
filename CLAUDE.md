@@ -173,6 +173,12 @@ This was a real, live wedge, not a hypothetical. Two players rejoined a game in 
 
 **Every exit from `handleRoomUpdate` must leave the screen saying something true**, which is why the early returns render. The wedge above was invisible for exactly this reason: the refusal path returned without rendering, so the board kept the render from *before* the client went online — the backdrop's "White, roll to see who starts" over a game that had moved on, and a Roll button still disabled from when `gameStarted` was false. The bug was one refused state; what made it look like a dead app rather than a sync hiccup was the stale screen.
 
+**Two states are compared with `canonicalJson`, never `JSON.stringify`.** `JSON.stringify` follows insertion order and **Firebase returns a record's keys sorted**, so a state that has been through the database never matches the identical state built locally: `createInitialState` writes `{ white: 0, black: 0 }` and the same object reads back `{ black: 0, white: 0 }`. Same board, different string. That is a second thing the database does to a record besides stripping nulls, and it is easier to miss because nothing about the values changes.
+
+It cost a finished online game its Play Again button. `isFreshStart` compared stringified states, so the restart was not recognised as one, and `isLegalSuccessor` then refused it for sending every checker back to the start — which no move can do. Both players sat looking at a game that would not clear, with "Ignored an impossible move from your opponent." underneath. `canonicalJson` lives in `rules.js`, and `isFreshStart`, the `seen` lookup, `acceptedStates`, `rejectedStates` and the undo snapshots all go through it — the ones that were correct were correct only because both sides of the comparison happened to have come from the same place.
+
+**The test fake reorders keys the way Firebase does** (`firebaseKeyOrder` in `tests.js`), which is what would have caught this. It sits alongside the fake's null-stripping and ServerValue resolution for the same reason: a fake that only models what you would naively expect lets the real difference ship. `assertEqual` compares canonically for the same reason — key order is never what an equality assertion in this suite means.
+
 **`handleRoomUpdate` applies two bars, not one**, and the distinction is the important part:
 
 - **A structurally impossible board is refused outright, always.** No amount of missed traffic can produce sixteen checkers, so accepting one later would be accepting a fabrication.

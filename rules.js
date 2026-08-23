@@ -574,11 +574,45 @@ function isStructurallyValid(state) {
   return true;
 }
 
+/* JSON with object keys in a fixed order, for comparing two states as
+   strings.
+
+   Plain JSON.stringify cannot do this job, and the difference is not
+   cosmetic. It serialises keys in insertion order, while Firebase returns
+   a record's keys sorted - so a state that has been through the database
+   never matches the identical state built locally. createInitialState
+   writes `{ white: 0, black: 0 }`; the same object read back reads
+   `{ black: 0, white: 0 }`. Identical boards, different strings.
+
+   That is exactly what stopped an online restart from being recognised as
+   one: the fresh game arrived, isFreshStart said no, and the monotonic
+   checks then refused it for putting every checker back to the start -
+   which no move can do. Both players were left staring at a finished game
+   with a Play Again button that did nothing. */
+function canonicalJson(value) {
+  if (value === undefined) {
+    return 'null';
+  }
+  if (Array.isArray(value)) {
+    return '[' + value.map(canonicalJson).join(',') + ']';
+  }
+  if (value && typeof value === 'object') {
+    const body = Object.keys(value)
+      .sort()
+      .map((key) => JSON.stringify(key) + ':' + canonicalJson(value[key]))
+      .join(',');
+    return '{' + body + '}';
+  }
+  return JSON.stringify(value);
+}
+
 /* A restart, which either player may perform at any time. createInitialState
    is deterministic now that the opening roll belongs to the players, so a
-   fresh game is a single exact value to compare against. */
+   fresh game is a single exact value to compare against - as long as the
+   comparison survives a round trip through the database, which is what
+   canonicalJson above is for. */
 function isFreshStart(state) {
-  return JSON.stringify(state) === JSON.stringify(createInitialState());
+  return canonicalJson(state) === canonicalJson(createInitialState());
 }
 
 /* Could `next` have come from `previous` by anything the game allows?
@@ -596,7 +630,7 @@ function isLegalSuccessor(previous, next, seen) {
   if (!previous) {
     return true;
   }
-  if (seen && seen.indexOf(JSON.stringify(next)) !== -1) {
+  if (seen && seen.indexOf(canonicalJson(next)) !== -1) {
     return true;
   }
   if (isFreshStart(next)) {

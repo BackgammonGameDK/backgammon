@@ -656,7 +656,7 @@ function recordUndoPoint(before, after) {
     turnHistory = [];
     return;
   }
-  turnHistory.push({ player: before.currentPlayer, before, afterJSON: JSON.stringify(after) });
+  turnHistory.push({ player: before.currentPlayer, before, afterJSON: canonicalJson(after) });
 }
 
 /* Drops a history belonging to a turn that is no longer the current one -
@@ -674,7 +674,7 @@ function canUndo() {
     return false;
   }
   const last = turnHistory[turnHistory.length - 1];
-  return Boolean(last) && JSON.stringify(state) === last.afterJSON;
+  return Boolean(last) && canonicalJson(state) === last.afterJSON;
 }
 
 /* Online this broadcasts like any other change, so the opponent watches the
@@ -1401,7 +1401,7 @@ function handleRoomUpdate(room, color) {
       render();
       return;
     }
-    const asJson = JSON.stringify(room.state);
+    const asJson = canonicalJson(room.state);
     if (rejectedStates.indexOf(asJson) === -1) {
       rejectedStates.push(asJson);
     }
@@ -1422,7 +1422,7 @@ function handleRoomUpdate(room, color) {
     onlineColor && onlineColor !== 'spectator' && wasHit(state, room.state, onlineColor);
 
   state = room.state;
-  acceptedStates.push(JSON.stringify(state));
+  acceptedStates.push(canonicalJson(state));
   if (acceptedStates.length > ACCEPTED_HISTORY) {
     acceptedStates.shift();
   }

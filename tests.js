@@ -26,9 +26,14 @@ function assert(condition, message) {
   }
 }
 
+/* Compared with canonicalJson, not JSON.stringify: key order is never what
+   an equality assertion here means, and the fake database deliberately
+   reorders keys the way Firebase does (see firebaseKeyOrder), so a
+   round-tripped record legitimately differs from the one that was sent in
+   ordering alone. */
 function assertEqual(actual, expected, message) {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
+  const a = canonicalJson(actual);
+  const e = canonicalJson(expected);
   if (a !== e) {
     throw new Error(`${message || 'not equal'} - expected ${e}, got ${a}`);
   }
@@ -603,7 +608,7 @@ test('an undo is accepted by memory, being a state already seen', () => {
   const moved = applyMove(before, 'white', 8, 5).state;
 
   assert(!isLegalSuccessor(moved, before, []), 'reverting looks impossible on its own');
-  assert(isLegalSuccessor(moved, before, [JSON.stringify(before)]),
+  assert(isLegalSuccessor(moved, before, [canonicalJson(before)]),
     'but is recognised when the state was broadcast a moment ago');
 });
 
@@ -618,7 +623,7 @@ test('a revert to a state never seen is rejected', () => {
     s.points[9] = { color: 'white', count: 1 };
   });
 
-  assert(!isLegalSuccessor(moved, invented, [JSON.stringify(before)]),
+  assert(!isLegalSuccessor(moved, invented, [canonicalJson(before)]),
     'memory covers undo, not any rewind an opponent fancies');
 });
 
@@ -719,7 +724,7 @@ function stripNulls(value) {
   }
   if (typeof value === 'object') {
     const out = {};
-    Object.keys(value).forEach((key) => {
+    firebaseKeyOrder(value).forEach((key) => {
       const cleaned = stripNulls(value[key]);
       if (cleaned !== undefined) {
         out[key] = cleaned;
@@ -728,6 +733,26 @@ function stripNulls(value) {
     return Object.keys(out).length ? out : undefined;
   }
   return value;
+}
+
+/* The other half of what a write actually does to a record, and the half
+   that was missing: Firebase stores a node's children *ordered by key* -
+   integer-like keys ascending first, then the rest lexicographically - so
+   what comes back out is not in the order it went in. `{ white, black }`
+   is read back as `{ black, white }`.
+
+   That matters because JSON.stringify follows insertion order, so any
+   comparison of two states as strings quietly depends on which side of
+   the database each came from. isFreshStart was doing exactly that, and
+   an online restart was refused by both players as an impossible move
+   because of it. A fake preserving insertion order cannot catch that -
+   it is the same reason stripNulls and the ServerValue resolution above
+   exist. */
+function firebaseKeyOrder(value) {
+  const keys = Object.keys(value);
+  const numeric = keys.filter((k) => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+  const rest = keys.filter((k) => !/^\d+$/.test(k)).sort();
+  return numeric.concat(rest);
 }
 
 /* Firebase replaces a ServerValue sentinel with the server's own clock at
@@ -1836,7 +1861,7 @@ test('a sparse points array (most points empty) survives a full send/receive rou
   a.sendState(sent);
   await waitFor(() => room.state);
 
-  assertEqual(room.state, sent, 'a full game state should be byte-for-byte identical after the round trip');
+  assertEqual(room.state, sent, 'a full game state should come back identical field for field');
   assertEqual(pipCount(room.state, 'white'), 167, 'and the rules should work on what comes back, not just look equal');
 });
 
@@ -1870,6 +1895,43 @@ test('half a finished opening round survives a round trip', async () => {
 
   assertEqual(room.state.openingRoll, { white: 6, black: null }, "black's absent key must read back as not-yet-rolled");
   assertEqual(room.state.phase, 'opening');
+});
+
+/* The bug this pins down cost a finished online game its Play Again
+   button. A restart is recognised by comparing the arriving state against
+   createInitialState(), and that comparison used JSON.stringify - which
+   follows insertion order, while Firebase returns keys sorted. So the
+   fresh game came back as the same board with `bar` and `off` written
+   `{ black, white }` instead of `{ white, black }`, was not recognised as
+   a restart, and was then refused by the monotonic checks for sending
+   every checker back to the start. Both players sat looking at a finished
+   game that would not clear. */
+test('a restart is still recognised as one after a round trip', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  a.sendState(createInitialState());
+  await waitFor(() => room.state);
+
+  assert(canonicalJson(room.state) === canonicalJson(createInitialState()),
+    'the board is the same one, whatever order the keys came back in');
+  assert(isFreshStart(room.state), 'so it is a fresh start');
+
+  /* And therefore accepted from a finished game, which is the moment it
+     actually matters - Play Again. */
+  const finished = createInitialState();
+  finished.phase = 'playing';
+  finished.openingRoll = null;
+  finished.currentPlayer = 'black';
+  finished.winner = 'black';
+  finished.points = new Array(25).fill(null);
+  finished.points[3] = { color: 'white', count: 15 };
+  finished.off = { white: 0, black: 15 };
+  assert(isStructurallyValid(finished), 'the finished game is itself a possible board');
+  assert(isLegalSuccessor(finished, room.state, []), 'Play Again clears it');
 });
 
 test('a resolved opening survives a round trip with its banner intact', async () => {
