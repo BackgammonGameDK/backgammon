@@ -627,6 +627,180 @@ test('a revert to a state never seen is rejected', () => {
     'memory covers undo, not any rewind an opponent fancies');
 });
 
+/* ---- deciding what to do with an arriving state -----------------------
+ *
+ * The checks above answer questions about states; judgeArrivingState turns
+ * those answers into the decision a client makes. It was extracted out of
+ * script.js's handleRoomUpdate specifically so it could be covered here:
+ * two live bugs came out of that decision living in a function nothing
+ * could test. The cases below are the ones that were got wrong, plus the
+ * ones the protection exists for.
+ */
+
+/* A mid-game board, and one both players have visibly moved on - which is
+   what a rejoining client meets, and what the pre-game backdrop cannot
+   account for. */
+function inProgressState() {
+  return playingState((s) => {
+    s.points[6] = { color: 'white', count: 6 };
+    s.points[8] = { color: 'white', count: 2 };
+    s.points[1] = { color: 'black', count: 1 };
+    s.points[3] = { color: 'black', count: 1 };
+  });
+}
+
+test('the first state a room hands over is accepted, having nothing to follow', () => {
+  const arriving = inProgressState();
+  const decision = judgeArrivingState(createInitialState(), arriving, { accepted: [], rejected: [] });
+
+  assertEqual(decision.verdict, 'accept',
+    'an empty accepted list means this client has no state from this room to judge against');
+  assertEqual(decision.rejected, [], 'and nothing is being held against anyone');
+});
+
+test('the first state is still refused if it could not exist', () => {
+  const impossible = inProgressState();
+  impossible.bar.white = 3;
+
+  const decision = judgeArrivingState(createInitialState(), impossible, { accepted: [], rejected: [] });
+  assertEqual(decision.verdict, 'refuse', 'joining is not a way past the structural checks');
+  assertEqual(decision.reason, 'impossible-board');
+});
+
+test('once synced, an ordinary move is accepted', () => {
+  const before = playingState();
+  const moved = applyMove(before, 'white', 8, 5).state;
+
+  const decision = judgeArrivingState(before, moved, { accepted: [canonicalJson(before)], rejected: [] });
+  assertEqual(decision.verdict, 'accept');
+});
+
+test('once synced, a board that skipped ahead is refused rather than adopted', () => {
+  const before = playingState();
+  const decision = judgeArrivingState(before, inProgressState(), {
+    accepted: [canonicalJson(before)],
+    rejected: [],
+  });
+
+  assertEqual(decision.verdict, 'refuse');
+  assertEqual(decision.reason, 'impossible-move');
+  assertEqual(decision.rejected.length, 1, 'and it is remembered, so a streak can build');
+});
+
+test('a client that has fallen behind resynchronises after three distinct refusals', () => {
+  const before = playingState();
+  const memory = { accepted: [canonicalJson(before)], rejected: [] };
+
+  /* Three different boards, as a client watching a game move on without it
+     would actually see - not one board sent three times. */
+  const jumps = [3, 5, 7].map((n) => playingState((s) => {
+    s.points[1] = { color: 'black', count: 1 };
+    s.points[n] = { color: 'black', count: 1 };
+  }));
+
+  const verdicts = jumps.map((jump) => {
+    const decision = judgeArrivingState(before, jump, memory);
+    memory.rejected = decision.rejected;
+    return decision.verdict;
+  });
+
+  assertEqual(verdicts, ['refuse', 'refuse', 'resync'],
+    'refusing forever would wedge the game, which is worse than an unpunished cheat');
+});
+
+test('the same refused board arriving again gets nowhere', () => {
+  const before = playingState();
+  const jump = inProgressState();
+  const memory = { accepted: [canonicalJson(before)], rejected: [] };
+
+  const verdicts = [1, 2, 3, 4, 5].map(() => {
+    const decision = judgeArrivingState(before, jump, memory);
+    memory.rejected = decision.rejected;
+    return decision.verdict;
+  });
+
+  assertEqual(verdicts, ['refuse', 'refuse', 'refuse', 'refuse', 'refuse'],
+    'the streak counts distinct states, so leaning on one board never wears it down');
+});
+
+test('a fabricated win is refused however many times it arrives', () => {
+  const before = playingState();
+  const fake = playingState((s) => {
+    for (let n = 1; n <= 24; n++) {
+      if (s.points[n] && s.points[n].color === 'black') {
+        s.points[n] = null;
+      }
+    }
+    s.off.black = 15;
+    s.winner = 'black';
+  });
+  const memory = { accepted: [canonicalJson(before)], rejected: [] };
+
+  const verdicts = [1, 2, 3, 4].map(() => {
+    const decision = judgeArrivingState(before, fake, memory);
+    memory.rejected = decision.rejected;
+    return decision.verdict;
+  });
+
+  assertEqual(verdicts, ['refuse', 'refuse', 'refuse', 'refuse'],
+    'being talked into a loss you could not verify is the worst outcome available');
+  assertEqual(judgeArrivingState(before, fake, memory).reason, 'unexplained-win');
+});
+
+test('accepting clears the refusals that came before it', () => {
+  const before = playingState();
+  const refused = judgeArrivingState(before, inProgressState(), {
+    accepted: [canonicalJson(before)],
+    rejected: [],
+  });
+  assertEqual(refused.rejected.length, 1);
+
+  const moved = applyMove(before, 'white', 8, 5).state;
+  const accepted = judgeArrivingState(before, moved, {
+    accepted: [canonicalJson(before)],
+    rejected: refused.rejected,
+  });
+  assertEqual(accepted.verdict, 'accept');
+  assertEqual(accepted.rejected, [], 'a streak is of consecutive refusals, so one acceptance ends it');
+});
+
+test('an undo is accepted, being a state this client broadcast a moment ago', () => {
+  const before = playingState();
+  const moved = applyMove(before, 'white', 8, 5).state;
+
+  const decision = judgeArrivingState(moved, before, {
+    accepted: [canonicalJson(before), canonicalJson(moved)],
+    rejected: [],
+  });
+  assertEqual(decision.verdict, 'accept');
+});
+
+test('Play Again is accepted from a finished game', () => {
+  const finished = playingState((s) => {
+    s.points = new Array(25).fill(null);
+    s.points[3] = { color: 'white', count: 15 };
+    s.off = { white: 0, black: 15 };
+    s.currentPlayer = 'black';
+    s.winner = 'black';
+  });
+  assert(isStructurallyValid(finished), 'the finished game is a possible board');
+
+  const decision = judgeArrivingState(finished, createInitialState(), {
+    accepted: [canonicalJson(finished)],
+    rejected: [],
+  });
+  assertEqual(decision.verdict, 'accept', 'a restart is always allowed, from anywhere');
+});
+
+test('a spectator arriving mid-game is not a special case', () => {
+  /* Nothing in the decision knows about seats: a spectator joins with the
+     same empty memory a player does, and gets the same answer. Worth
+     pinning, since the refusal that wedged a rejoining player would have
+     wedged a spectator identically. */
+  const decision = judgeArrivingState(createInitialState(), inProgressState(), {});
+  assertEqual(decision.verdict, 'accept', 'and the memory argument is optional');
+});
+
 /* ---- purity and serialization (relied on by the future sync layer) ---- */
 
 test('applyMove does not mutate the state it is given', () => {

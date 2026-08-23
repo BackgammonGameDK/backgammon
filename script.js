@@ -1150,14 +1150,11 @@ let joinedFromLobby = false;
    covers a doubles turn with slack. */
 const ACCEPTED_HISTORY = 8;
 let acceptedStates = [];
-/* Distinct states refused since the last accepted one - see
-   handleRoomUpdate for why refusing forever is not an option. Distinct
-   rather than a plain count on purpose: a client that has fallen behind
-   sees the game move on, so the states it refuses keep changing, whereas
-   the same state arriving again is far likelier to be someone leaning on
-   it. Resending one rejected board therefore gets nowhere. */
+/* Distinct states refused since the last accepted one. What the number
+   means, and why it counts distinct states rather than attempts, belongs
+   with the policy - see judgeArrivingState and REJECTIONS_BEFORE_RESYNC in
+   rules.js. This is only where the list is kept. */
 let rejectedStates = [];
-const REJECTIONS_BEFORE_RESYNC = 3;
 
 /* The gate for "is this tab allowed to act right now": a spectator never
    is; neither is a seated player before the other seat has ever been
@@ -1325,94 +1322,52 @@ function handleRoomUpdate(room, color) {
   setBoardPerspective(color);
   renderRoomStatus(room);
 
+  /* One render, unconditionally, whatever adoptRoomState decided. That is
+     structural rather than tidy: the previous version returned early on
+     each refusal and on a room with no state yet, and every one of those
+     paths left the screen showing the render from *before* this client
+     went online - the backdrop's "White, roll to see who starts" over a
+     game that had moved on, with Roll disabled from when no game had
+     started. It read as a dead app. A single exit cannot forget. */
+  const notice = adoptRoomState(room);
+  render();
+  if (notice) {
+    showMessage(notice);
+  }
+}
+
+/* Decides nothing itself - judgeArrivingState in rules.js does that, where
+   it can be tested - and does only what a decision cannot: seeds an empty
+   room, swaps in the state, keeps the memory the judgement runs on, and
+   returns whatever the player should be told, or null.
+
+   `== null` rather than `=== null`: Firebase never actually stores a null
+   value - a key written as null is simply absent from what a listener
+   receives back, so a freshly-created room's `state` arrives as undefined,
+   not null. `== null` matches both.
+
+   Seeding waits for both seats (see bothSeatsClaimed above). It used to be
+   an anti-abuse measure, since the seeded state carried a ready-made
+   opening roll; now that the roll belongs to the players there is nothing
+   to game, and the gate simply avoids putting a board in a room nobody has
+   arrived at yet. */
+function adoptRoomState(room) {
   if (room.state == null) {
-    if (color === 'white' && bothSeatsClaimed(room)) {
+    if (onlineColor === 'white' && bothSeatsClaimed(room)) {
       onlineRoom.sendState(createInitialState());
     }
-    /* There is no board to adopt yet, but this client is online now and
-       the last render happened before it was - so without this the screen
-       keeps the backdrop's turn indicator ("White, roll to see who
-       starts") and a Roll button disabled from when no game had started,
-       neither of which is true any more. Every exit from this function
-       has to leave the screen saying something true; that is the whole
-       job of the render() calls on the refusal paths below too. */
-    render();
-    return;
+    return null;
   }
 
-  /* Anyone seated may write anything to the room, which was a fair
-     simplification while a room could only be reached by someone sent its
-     code. The lobby seats you with strangers, so an arriving state now has
-     to look like something that could actually have happened.
+  const decision = judgeArrivingState(state, room.state, {
+    accepted: acceptedStates,
+    rejected: rejectedStates,
+  });
+  rejectedStates = decision.rejected;
 
-     The streak is the important detail. A client that has missed
-     intermediate updates - a reconnect delivers only the latest state -
-     will legitimately see a jump it cannot account for, and refusing
-     forever would wedge the game permanently. That is a worse outcome than
-     an unpunished cheat, so after a few refusals in a row it accepts and
-     resynchronises. The protection is therefore against casual tampering,
-     not a determined opponent, and is deliberately biased that way. */
-  /* Two bars, not one, because they fail for different reasons.
-
-     A board that could not exist - sixteen checkers, a winner who has
-     borne nothing off - is refused outright and never resynchronised past.
-     No amount of missed traffic can produce one, so accepting it later
-     would be accepting a fabrication.
-
-     The same goes for anything that ends the game. Being talked into a
-     loss you could not verify is the worst outcome available here, so a
-     win has to arrive as a legal step or not at all.
-
-     Everything else is refused, but only for a while: a client that has
-     fallen behind sees jumps it cannot account for, and refusing forever
-     would wedge the game permanently, which is a worse and far likelier
-     harm than an unpunished cheat. */
-  if (!isStructurallyValid(room.state)) {
-    showMessage('Ignored an impossible board from your opponent.');
-    render();
-    return;
+  if (decision.verdict === ARRIVAL_REFUSE) {
+    return refusalNotice(decision.reason);
   }
-
-  /* isLegalSuccessor judges a *step*, so there has to be a state to have
-     stepped from. On joining there is not: what is on screen is the
-     pre-game backdrop, which this room never produced. A game in progress
-     is not a legal step from it either - the opponent has been moving all
-     along, so by the backdrop's reckoning they have gained ground on a
-     turn that is not theirs, which is exactly the fabricated-win shape the
-     check exists to catch.
-
-     Passing `null` is isLegalSuccessor's own seam for this, and it means
-     structural validity is the whole bar for the first state a room hands
-     over. That is the right bar: there is nothing to contradict, and a
-     board that was already there when you arrived is not something you
-     could verify by any amount of checking.
-
-     This is what wedged a game both players rejoined. Each refused the
-     real board, and neither could resynchronise past it - that takes three
-     *distinct* refusals, and a room where both players are stuck sends
-     nothing further. The screen kept its pre-online render, so both saw
-     "White, roll to see who starts" over a board that had moved on, with
-     Roll disabled and no way back in. */
-  const baseline = acceptedStates.length ? state : null;
-
-  if (!isLegalSuccessor(baseline, room.state, acceptedStates)) {
-    if (room.state.winner) {
-      showMessage('Ignored an unexplained win from your opponent.');
-      render();
-      return;
-    }
-    const asJson = canonicalJson(room.state);
-    if (rejectedStates.indexOf(asJson) === -1) {
-      rejectedStates.push(asJson);
-    }
-    if (rejectedStates.length < REJECTIONS_BEFORE_RESYNC) {
-      showMessage('Ignored an impossible move from your opponent.');
-      render();
-      return;
-    }
-    showMessage('Resynchronised with your opponent.');
-  }
-  rejectedStates = [];
 
   /* Worked out by comparison rather than announced, because nothing in the
      broadcast says a hit happened - the board simply changes underneath
@@ -1427,11 +1382,31 @@ function handleRoomUpdate(room, color) {
     acceptedStates.shift();
   }
   selectedFrom = null;
-  render();
 
-  if (hitMe) {
-    showMessage('Your checker was hit — you must bring it in from the bar.');
+  /* Resynchronising wins over the hit notice when both apply, which is a
+     change from the version that showed the hit. Across a resync the two
+     states being compared are several moves apart, so "you were hit" is a
+     guess about which turn it happened on; that the board jumped is the
+     thing actually worth saying. */
+  if (decision.verdict === ARRIVAL_RESYNC) {
+    return 'Resynchronised with your opponent.';
   }
+  if (hitMe) {
+    return 'Your checker was hit — you must bring it in from the bar.';
+  }
+  return null;
+}
+
+/* The sentence for a refusal code, the same split selectionMessage above
+   uses: rules.js says which bar was hit, script.js says it in English. */
+function refusalNotice(reason) {
+  if (reason === ARRIVAL_IMPOSSIBLE_BOARD) {
+    return 'Ignored an impossible board from your opponent.';
+  }
+  if (reason === ARRIVAL_UNEXPLAINED_WIN) {
+    return 'Ignored an unexplained win from your opponent.';
+  }
+  return 'Ignored an impossible move from your opponent.';
 }
 
 function startOnline(roomCode) {

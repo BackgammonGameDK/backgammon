@@ -663,6 +663,94 @@ function isLegalSuccessor(previous, next, seen) {
   return true;
 }
 
+/* ---- What to do with a state that just arrived -------------------------
+ *
+ * The two checks above answer questions about states. This turns their
+ * answers into the one decision a client actually has to make, and it
+ * lives here, beside them and away from the DOM, because that decision is
+ * about states rather than about pixels - the same reason selectionProblem
+ * below is a rule rather than presentation.
+ *
+ * It also lives here because it is where the mistakes have been. Two
+ * separate live bugs came out of this decision being made inline in
+ * script.js, in a function nothing could test: a rejoining client judged
+ * an arriving game against the pre-game backdrop and refused it, and every
+ * exit that refused a state forgot to re-render. Both reached players.
+ * Pure and named, the decision is now covered by the suite; what is left
+ * in script.js is only the acting on it.
+ */
+
+/* Distinct refusals before a client concludes it is the one that is behind.
+   Distinct rather than a plain count on purpose: a client that has fallen
+   behind watches the game move on, so what it refuses keeps changing,
+   whereas the same board arriving over and over is far likelier to be
+   someone leaning on it. Resending one rejected board therefore gets
+   nowhere. */
+const REJECTIONS_BEFORE_RESYNC = 3;
+
+const ARRIVAL_ACCEPT = 'accept';
+const ARRIVAL_RESYNC = 'resync';
+const ARRIVAL_REFUSE = 'refuse';
+
+const ARRIVAL_IMPOSSIBLE_BOARD = 'impossible-board';
+const ARRIVAL_UNEXPLAINED_WIN = 'unexplained-win';
+const ARRIVAL_IMPOSSIBLE_MOVE = 'impossible-move';
+
+/* `previous` is the board on screen, `next` the one that arrived, and
+   `memory` is what this client remembers of the room: `accepted`, the last
+   few states it took (canonicalJson, newest last), and `rejected`, the
+   distinct states it has turned down since the last one it took.
+ *
+ * Returns { verdict, reason, rejected } - the last being the updated
+ * refusal list, so the caller has nothing to work out for itself.
+ *
+ * Three bars, and they fail for different reasons.
+ *
+ * A board that could not exist - sixteen checkers, a winner who has borne
+ * nothing off - is refused outright and never resynchronised past. No
+ * amount of missed traffic can produce one, so accepting it later would be
+ * accepting a fabrication. The same goes for anything that ends the game:
+ * being talked into a loss you could not verify is the worst outcome
+ * available here, so a win has to arrive as a legal step or not at all.
+ *
+ * Everything else is refused only for a while. A client that has missed
+ * intermediate updates - a reconnect delivers only the latest state - will
+ * legitimately see a jump it cannot account for, and refusing forever
+ * would wedge the game permanently. That is a worse and far likelier harm
+ * than an unpunished cheat, so the bias throughout is to refuse only what
+ * is definitely impossible. */
+function judgeArrivingState(previous, next, { accepted = [], rejected = [] } = {}) {
+  if (!isStructurallyValid(next)) {
+    return { verdict: ARRIVAL_REFUSE, reason: ARRIVAL_IMPOSSIBLE_BOARD, rejected };
+  }
+
+  /* isLegalSuccessor judges a *step*, so there has to be a state to have
+     stepped from - and on joining there is not. What is on screen then is
+     the pre-game backdrop, which this room never produced, and a game in
+     progress is not a legal step from it: the opponent has been moving all
+     along, so by the backdrop's reckoning they have gained ground on a
+     turn that is not theirs, which is exactly the fabricated-win shape the
+     check exists to catch. An empty `accepted` is what says "nothing has
+     come from this room yet"; passing null is isLegalSuccessor's own seam
+     for having nothing to contradict. */
+  const baseline = accepted.length ? previous : null;
+
+  if (isLegalSuccessor(baseline, next, accepted)) {
+    return { verdict: ARRIVAL_ACCEPT, reason: null, rejected: [] };
+  }
+
+  if (next.winner) {
+    return { verdict: ARRIVAL_REFUSE, reason: ARRIVAL_UNEXPLAINED_WIN, rejected };
+  }
+
+  const asJson = canonicalJson(next);
+  const stillRejected = rejected.indexOf(asJson) === -1 ? rejected.concat(asJson) : rejected;
+  if (stillRejected.length < REJECTIONS_BEFORE_RESYNC) {
+    return { verdict: ARRIVAL_REFUSE, reason: ARRIVAL_IMPOSSIBLE_MOVE, rejected: stillRejected };
+  }
+  return { verdict: ARRIVAL_RESYNC, reason: null, rejected: [] };
+}
+
 /* ---- Explaining a refusal (item 3) ------------------------------------
  *
  * A click that does nothing is the most confusing thing the board can do
