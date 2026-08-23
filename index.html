@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=47">
+  <link rel="stylesheet" href="style.css?v=48">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -17,7 +17,6 @@
     </div>
     <div class="online-area">
       <div id="room-status" hidden>
-        <button id="room-chip" hidden></button>
         <div id="room-details">
           <span id="room-info"></span>
           <button id="copy-link-button">Copy link</button>
@@ -121,18 +120,20 @@
   <div id="start-screen">
     <div id="start-content">
       <div id="start-title">Backgammon</div>
-      <button id="start-hotseat-button" class="start-primary">Play on this device</button>
-      <div id="start-divider"><span>or play online</span></div>
-      <!-- Shown only when this browser has been in a room before. First
-           among the online options because a returning player is exactly
-           who needs it - a first-time visitor never sees it at all. -->
-      <button id="rejoin-button" class="start-primary" hidden>Rejoin room <span id="rejoin-code"></span></button>
-      <!-- "Find" rather than "Start": pressing it now looks for someone
-           already waiting before starting a room, so two people pressing
-           it meet instead of landing in two empty rooms. -->
+      <!-- Finding an opponent is the ordinary way to play now, so it leads
+           and it is the only filled button. "Find" rather than "Start":
+           pressing it looks for someone already waiting before starting a
+           room, so two people pressing it meet instead of landing in two
+           empty rooms. -->
       <button id="play-online-button" class="start-primary">Find an opponent</button>
-      <div id="start-join-label">Got a room code from a friend?</div>
-      <div id="join-area">
+      <button id="start-hotseat-button" class="start-secondary">Play on this device</button>
+      <!-- Shown only when this browser has been in a room before; a
+           first-time visitor never sees it at all. -->
+      <button id="rejoin-button" class="start-secondary" hidden>Rejoin room <span id="rejoin-code"></span></button>
+      <!-- Room codes are a fallback, not the main road, so the field stays
+           folded away until somebody actually has one. -->
+      <button id="start-code-toggle" class="start-quiet">Have a room code?</button>
+      <div id="join-area" hidden>
         <input id="room-code-input" type="text" maxlength="6" placeholder="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false">
         <button id="join-room-button">Join</button>
       </div>
@@ -150,10 +151,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=47"></script>
-  <script src="qrcode-generator.js?v=47"></script>
-  <script src="rules.js?v=47"></script>
-  <script src="sync.js?v=47"></script>
-  <script src="script.js?v=47"></script>
+  <script src="firebase-config.js?v=48"></script>
+  <script src="qrcode-generator.js?v=48"></script>
+  <script src="rules.js?v=48"></script>
+  <script src="sync.js?v=48"></script>
+  <script src="script.js?v=48"></script>
 </body>
 </html>

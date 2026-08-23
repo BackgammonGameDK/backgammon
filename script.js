@@ -36,7 +36,6 @@ const rejoinCodeEl = document.querySelector('#rejoin-code');
 const roomCodeInput = document.querySelector('#room-code-input');
 const joinRoomButton = document.querySelector('#join-room-button');
 const roomStatusEl = document.querySelector('#room-status');
-const roomChipEl = document.querySelector('#room-chip');
 const roomDetailsEl = document.querySelector('#room-details');
 const roomInfoEl = document.querySelector('#room-info');
 const copyLinkButton = document.querySelector('#copy-link-button');
@@ -145,10 +144,6 @@ let hintsEnabled = false;
    resurrect a dead board. If the comparison ever fails for some benign
    reason it fails safe, disabling Undo rather than doing the wrong thing. */
 let turnHistory = [];
-/* Whether the room-code chip's popover (#room-details) has been opened
-   while collapsed - see renderRoomStatus. Irrelevant, and ignored, while
-   the row isn't collapsed at all. */
-let roomDetailsOpen = false;
 /* Which winning color the celebration overlay has already been shown for,
    distinct from state.winner itself: dismissing the overlay only hides it,
    it doesn't clear state.winner, so without this the very next render()
@@ -932,10 +927,9 @@ function exitToStartScreen() {
     latestRoom = null;
     currentRoomCode = null;
     qrRenderedForRoom = null;
-    roomDetailsOpen = false;
     roomStatusEl.hidden = true;
     qrPanelEl.hidden = true;
-    document.body.classList.remove('online');
+    document.body.classList.remove('showing-room-row');
   }
   stopSearching();
 
@@ -1128,14 +1122,18 @@ function renderRoomStatus(room) {
   roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${status}`;
   roomStatusEl.classList.toggle('room-status--warning', otherDeparted || (seatTaken && !otherPresent));
 
-  /* Nothing left to actively report (opponent present and connected, or
-     spectating) - the Copy link/QR row isn't needed anymore, so collapse
-     it to just the room code, restorable via roomChipEl's click handler. */
-  const collapsed = status === '';
-  roomStatusEl.classList.toggle('room-status--collapsed', collapsed);
-  roomChipEl.hidden = !collapsed;
-  roomChipEl.textContent = currentRoomCode;
-  roomDetailsEl.hidden = collapsed && !roomDetailsOpen;
+  /* The row earns its space only while it has something to say. During an
+     ordinary game it does not - the room code is in the address bar if
+     anyone wants it, and Copy link matters while you are waiting for
+     somebody, not while you are playing them. So it goes away and the
+     board grows into the space (see --reclaimed in style.css), and comes
+     back by itself the moment there is news: an opponent who has not
+     arrived, disconnected, or left. A spectator always sees it, since
+     otherwise nothing on screen would say they cannot play. */
+  const worthARow = status !== '' || onlineColor === 'spectator';
+  roomStatusEl.hidden = !worthARow;
+  roomDetailsEl.hidden = false;
+  document.body.classList.toggle('showing-room-row', worthARow);
 
   /* An opponent has arrived, so the room must come off the list before
      anyone else is sent to it. Whether they came from the queue or from an
@@ -1200,10 +1198,6 @@ function startOnline(roomCode) {
   currentRoomCode = roomCode;
   rememberRoom(roomCode);
   leaveStartScreen();
-  /* Tells style.css this game has a room status row to make space for.
-     Without it .online-area is hidden and the board claims that height
-     instead (see --online-row). */
-  document.body.classList.add('online');
   roomStatusEl.hidden = false;
   onlineRoom = joinRoom(roomCode, { onRoom: handleRoomUpdate });
 }
@@ -1264,6 +1258,16 @@ function joinWithCode() {
   startOnline(code);
 }
 
+/* Folded away until someone says they have a code, so the common path
+   isn't asked to read past it. */
+document.querySelector('#start-code-toggle').addEventListener('click', () => {
+  const joinArea = document.querySelector('#join-area');
+  joinArea.hidden = !joinArea.hidden;
+  if (!joinArea.hidden) {
+    roomCodeInput.focus();
+  }
+});
+
 joinRoomButton.addEventListener('click', joinWithCode);
 roomCodeInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
@@ -1278,11 +1282,6 @@ roomCodeInput.addEventListener('input', () => {
 
 copyLinkButton.addEventListener('click', () => {
   navigator.clipboard.writeText(location.href).then(() => showMessage('Link copied.'));
-});
-
-roomChipEl.addEventListener('click', () => {
-  roomDetailsOpen = !roomDetailsOpen;
-  renderRoomStatus(latestRoom);
 });
 
 /* Renders lazily (first open, or a room change) rather than on every room
