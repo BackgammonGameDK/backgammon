@@ -142,6 +142,20 @@ Two deliberate omissions, both worth knowing before "improving" this:
 
 Its real limit: a mobile browser that discards a backgrounded tab stops running the page at all, so no title update happens either. This helps while you're briefly in another app, not when you return the next day — that case is what seat recovery in `sync.js` is for.
 
+### Saying why (`selectionProblem`, `wasHit`, sticky messages)
+
+A click that does nothing is the most confusing thing the board can do to someone still learning, and four separate rules can produce one. `selectionProblem(state, color, from)` in `rules.js` says which — `not-your-turn`, `no-dice`, `bar-first`, `no-moves`, or null — and `script.js` turns the code into a sentence. **It lives in `rules.js` because it is a rule, not presentation**: what stops you picking up a checker is exactly what the engine already knows about it, and being pure it is testable without a browser. `canSelect` is now just this function returning null.
+
+**The order is deliberate**, most fundamental first: there is no use being told a checker is stuck when the real problem is that you have not rolled. A refusal is only explained when the click actually landed on a checker or point — answering taps on the bare board would turn the message line into noise.
+
+**A hit is announced to both sides, by different routes.** The player doing it reads `applyMove`'s `hit`. The player it happens to is told by `wasHit(previous, next, color)`, computed in `handleRoomUpdate` *before* `state` is replaced, because nothing in the broadcast says a hit occurred — online the board simply changes underneath them, which is no cue at all.
+
+**`showMessage(text, { sticky })`** skips the three-second auto-clear. The skipped-turn notice uses it: the dice that explain *why* a turn was skipped are cleared by the skip itself, so a timed message removed the only surviving record of the reason at the same moment as the evidence. Sticky messages are cleared by the player's next action (`clearMessage` in `attemptMove` and the Roll handler), not by a clock.
+
+**The turn indicator says "Game over" once won**, rather than continuing to claim a turn next to "White wins!". It says something rather than emptying because `.status-row`'s height is part of the board's hand-measured budget.
+
+Two hygiene fixes live here too. `commitState` clears `selectedFrom` for both branches, since `handleRoomUpdate` already did and the hot-seat path did not — harmless while every caller cleared it themselves, an easy trap for the next one that does not. And `animateMove` clears its FLIP transform on a timeout as well as `transitionend`: neither that event nor `requestAnimationFrame` fires in a hidden tab, which is exactly where a tab sits while waiting on an opponent's move.
+
 ### Checking a state that arrived from somewhere else (`isStructurallyValid`, `isLegalSuccessor`)
 
 `sendState` broadcasts whole snapshots and any seated client may write one, which was a fair simplification while a room could only be reached by someone sent its code. **The lobby seats you with strangers**, so an arriving state is now checked before it is believed.

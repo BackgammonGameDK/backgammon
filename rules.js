@@ -628,3 +628,49 @@ function isLegalSuccessor(previous, next, seen) {
 
   return true;
 }
+
+/* ---- Explaining a refusal (item 3) ------------------------------------
+ *
+ * A click that does nothing is the most confusing thing the board can do
+ * to someone still learning the rules, and four separate rules can produce
+ * one. These say which, as a code the UI turns into a sentence.
+ *
+ * They live here rather than in script.js because they are rules, not
+ * presentation: what stops you picking up a checker is exactly what the
+ * engine already knows about it. Being pure, the reasons are testable
+ * without a browser.
+ */
+const SELECT_NOT_YOUR_TURN = 'not-your-turn';
+const SELECT_NO_DICE = 'no-dice';
+const SELECT_BAR_FIRST = 'bar-first';
+const SELECT_NO_MOVES = 'no-moves';
+
+/* Ordered most fundamental first, so the answer is the one worth acting
+   on: there is no point being told a checker has nowhere to go when the
+   real problem is that you have not rolled yet. */
+function selectionProblem(state, color, from) {
+  if (color !== state.currentPlayer) {
+    return SELECT_NOT_YOUR_TURN;
+  }
+  if (availableDice(state).length === 0) {
+    return SELECT_NO_DICE;
+  }
+  if (state.bar[color] > 0 && from !== BAR) {
+    return SELECT_BAR_FIRST;
+  }
+  if (getLegalDestinations(state, color, from).length === 0) {
+    return SELECT_NO_MOVES;
+  }
+  return null;
+}
+
+/* Whether `color` had a checker sent to the bar between these two states.
+   The player being hit has no other cue that it happened - online the
+   board simply changes under them - so the receiving client works it out
+   by comparison rather than being told. */
+function wasHit(previous, next, color) {
+  if (!previous || !next) {
+    return false;
+  }
+  return next.bar[color] > previous.bar[color];
+}

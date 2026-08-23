@@ -376,6 +376,72 @@ test('a move consumes exactly one die', () => {
   assertEqual(availableDice(result.state)[0].value, 3, 'the 3 remains');
 });
 
+/* ---- explaining a refused click, and noticing a hit (item 3) ---- */
+
+test('a checker that can be picked up has no problem to report', () => {
+  const state = withDice(place(emptyState(), 13, 'white', 2), 3, 5);
+  assertEqual(selectionProblem(state, 'white', 13), null);
+});
+
+test('the opponent\'s checkers report whose turn it is', () => {
+  const state = withDice(place(emptyState(), 13, 'black', 2), 3, 5);
+  assertEqual(selectionProblem(state, 'black', 13), SELECT_NOT_YOUR_TURN, 'white is on turn');
+});
+
+test('nothing can be picked up before the dice are rolled', () => {
+  const state = place(emptyState(), 13, 'white', 2);
+  assertEqual(selectionProblem(state, 'white', 13), SELECT_NO_DICE);
+});
+
+test('a checker on the bar has to come in first', () => {
+  const state = withDice(place(emptyState(), 13, 'white', 2), 3, 5);
+  state.bar.white = 1;
+  assertEqual(selectionProblem(state, 'white', 13), SELECT_BAR_FIRST, 'the board checker is refused');
+  assertEqual(selectionProblem(state, 'white', BAR), null, 'while the barred one is exactly what you may pick up');
+});
+
+test('a checker with nowhere to go says so', () => {
+  /* White on 13 with a 5: 8 is blocked by black, and nothing else is
+     reachable, so this checker specifically is stuck. */
+  const state = withDice(place(place(emptyState(), 13, 'white', 1), 8, 'black', 2), 5);
+  assertEqual(selectionProblem(state, 'white', 13), SELECT_NO_MOVES);
+});
+
+/* The order matters: being told a checker is stuck is useless when the
+   real problem is that you have not rolled. */
+test('the more fundamental problem is the one reported', () => {
+  const unrolled = place(emptyState(), 13, 'white', 2);
+  unrolled.bar.white = 1;
+  assertEqual(selectionProblem(unrolled, 'white', 13), SELECT_NO_DICE, 'dice before bar');
+
+  const notYours = withDice(place(emptyState(), 13, 'black', 2), 3);
+  notYours.bar.black = 1;
+  assertEqual(selectionProblem(notYours, 'black', 13), SELECT_NOT_YOUR_TURN, 'turn before everything');
+});
+
+test('a hit is visible by comparing the two states', () => {
+  const before = withDice(place(place(emptyState(), 8, 'white', 1), 5, 'black', 1), 3);
+  const after = applyMove(before, 'white', 8, 5);
+
+  assert(after.ok && after.hit, 'the move does hit');
+  assert(wasHit(before, after.state, 'black'), 'black can tell it was hit without being told');
+  assert(!wasHit(before, after.state, 'white'), 'and white was not');
+});
+
+test('an ordinary move is not mistaken for a hit', () => {
+  const before = withDice(place(emptyState(), 8, 'white', 1), 3);
+  const after = applyMove(before, 'white', 8, 5);
+  assert(after.ok && !after.hit, 'nothing to hit');
+  assert(!wasHit(before, after.state, 'black'));
+  assert(!wasHit(before, after.state, 'white'));
+});
+
+test('a restart is not mistaken for a hit', () => {
+  const before = withDice(place(emptyState(), 8, 'white', 1), 3);
+  before.bar.black = 2;
+  assert(!wasHit(before, createInitialState(), 'black'), 'the bar emptying is not a hit');
+});
+
 /* ---- validating a state that arrived from somewhere else (stage 7c) ----
  *
  * The lobby seats you with strangers, and sendState broadcasts whole

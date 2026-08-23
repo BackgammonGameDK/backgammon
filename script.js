@@ -198,14 +198,17 @@ function animateMove(checker, moveFn) {
     checker.style.transform = '';
   });
 
-  checker.addEventListener(
-    'transitionend',
-    () => {
-      checker.classList.remove('animating');
-      checker.style.transform = '';
-    },
-    { once: true }
-  );
+  /* Both paths call the same idempotent cleanup, and the timeout is the
+     one that matters: neither requestAnimationFrame nor transitionend
+     fires in a hidden tab, which is exactly where a tab sits while waiting
+     on an opponent's move online. A checker left holding its inverse
+     transform would sit visibly offset from where the state says it is. */
+  const settle = () => {
+    checker.classList.remove('animating');
+    checker.style.transform = '';
+  };
+  checker.addEventListener('transitionend', settle, { once: true });
+  setTimeout(settle, 400);
 }
 
 /* Every container that can hold checkers, paired with what the state says
@@ -468,7 +471,13 @@ function renderDocumentTitle() {
 
 function renderStatus() {
   const turnText = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
-  if (state.phase === 'opening') {
+  if (state.winner) {
+    /* It is nobody's turn any more. #game-over carries who won, so this
+       says only that the game has ended - and says *something*, rather
+       than emptying, because .status-row's height is part of the board's
+       hand-measured budget. */
+    turnIndicator.textContent = 'Game over';
+  } else if (state.phase === 'opening') {
     turnIndicator.textContent = openingStatusText();
   } else {
     turnIndicator.textContent = state.openingRoll
@@ -591,13 +600,25 @@ function flashInvalid(element) {
   setTimeout(() => element.classList.remove('invalid-target'), 300);
 }
 
-function showMessage(text) {
+/* `sticky` messages stay until the player does something, rather than
+   expiring on a timer. That matters for the skipped-turn notice: the dice
+   explaining *why* a turn was skipped are cleared by the skip itself, so a
+   three-second window removed the only surviving record of the reason at
+   the same moment as the evidence. */
+function showMessage(text, { sticky } = {}) {
   messageEl.textContent = text;
+  if (sticky) {
+    return;
+  }
   setTimeout(() => {
     if (messageEl.textContent === text) {
       messageEl.textContent = '';
     }
   }, 3000);
+}
+
+function clearMessage() {
+  messageEl.textContent = '';
 }
 
 /* A die is only given up once no checker can use it, and the turn only ends
@@ -617,7 +638,7 @@ function resolveTurn(next) {
 
   if (!hasAnyLegalMove(next, next.currentPlayer)) {
     const values = availableDice(next).map((die) => die.value).join(', ');
-    showMessage(`No legal move for ${values} — skipped.`);
+    showMessage(`No legal move for ${values} — skipped.`, { sticky: true });
     return endTurn(next);
   }
 
@@ -672,6 +693,9 @@ function undoLastMove() {
 undoButton.addEventListener('click', undoLastMove);
 
 function attemptMove(from, to, targetElement) {
+  /* Clears a sticky skipped-turn notice from the previous turn: it stays
+     until the player acts, and this is them acting. */
+  clearMessage();
   const result = applyMove(state, state.currentPlayer, from, to);
 
   if (!result.ok) {
@@ -680,26 +704,69 @@ function attemptMove(from, to, targetElement) {
   }
 
   selectedFrom = null;
+  if (result.hit) {
+    showMessage('Hit — their checker goes to the bar.');
+  }
+  /* resolveTurn may replace that with a skipped-turn notice, which is the
+     more actionable of the two. */
   const next = result.state.winner ? result.state : resolveTurn(result.state);
   recordUndoPoint(state, next);
   commitState(next);
 }
 
 function canSelect(from) {
-  return (
-    availableDice(state).length > 0 &&
-    getLegalDestinations(state, state.currentPlayer, from).length > 0
-  );
+  return selectionProblem(state, state.currentPlayer, from) === null;
+}
+
+/* rules.js says which rule refused the click; this says it in words. The
+   turn case reads differently online, where "your opponent's" is more use
+   than a colour name. */
+function selectionMessage(problem) {
+  if (problem === SELECT_NOT_YOUR_TURN) {
+    return onlineRoom
+      ? "Those are your opponent's checkers."
+      : `It's ${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn.`;
+  }
+  if (problem === SELECT_NO_DICE) {
+    return 'Roll the dice first.';
+  }
+  if (problem === SELECT_BAR_FIRST) {
+    return 'You must bring your checker in from the bar first.';
+  }
+  return 'That checker has nowhere to go.';
+}
+
+/* Why the board is not accepting input at all, as opposed to why one
+   particular checker cannot be picked up. */
+function onlineRefusalMessage() {
+  if (onlineColor === 'spectator') {
+    return 'You are watching this game.';
+  }
+  const other = onlineColor === 'white' ? 'black' : 'white';
+  if (!(latestRoom && latestRoom.seats && latestRoom.seats[other])) {
+    return 'Waiting for an opponent to join.';
+  }
+  return "It's your opponent's turn.";
 }
 
 board.addEventListener('click', (event) => {
-  if (!gameStarted || state.winner || blockedOnline()) {
-    return;
-  }
-
   const checker = event.target.closest('.checker');
   const point = event.target.closest('.point');
   const offTray = event.target.closest('.off');
+
+  if (!gameStarted || state.winner) {
+    return;
+  }
+
+  /* Only explain a refusal when the click actually landed on something.
+     Tapping the wood between points is exploratory, and answering it would
+     turn the message line into noise. */
+  if (blockedOnline()) {
+    if (checker || point) {
+      showMessage(onlineRefusalMessage());
+    }
+    return;
+  }
 
   if (selectedFrom !== null && offTray && offTray.dataset.owner === state.currentPlayer) {
     attemptMove(selectedFrom, OFF, offTray);
@@ -719,7 +786,10 @@ board.addEventListener('click', (event) => {
     !getLegalDestinations(state, state.currentPlayer, selectedFrom).includes(locationOf(checker))
   ) {
     const from = locationOf(checker);
-    if (canSelect(from)) {
+    const problem = selectionProblem(state, state.currentPlayer, from);
+    if (problem) {
+      showMessage(selectionMessage(problem));
+    } else {
       selectedFrom = from;
       renderSelection();
     }
@@ -733,14 +803,22 @@ board.addEventListener('click', (event) => {
 
   if (checker) {
     const from = locationOf(checker);
-    if (from === null || colorOf(checker) !== state.currentPlayer) {
+    /* Already borne off - there is nothing to say about a checker that has
+       finished. */
+    if (from === null) {
       return;
     }
     if (from === selectedFrom) {
       selectedFrom = null;
-    } else if (canSelect(from)) {
-      selectedFrom = from;
+      renderSelection();
+      return;
     }
+    const problem = selectionProblem(state, colorOf(checker), from);
+    if (problem) {
+      showMessage(selectionMessage(problem));
+      return;
+    }
+    selectedFrom = from;
     renderSelection();
     return;
   }
@@ -753,6 +831,7 @@ rollButton.addEventListener('click', () => {
   if (!gameStarted || state.winner || blockedOnline()) {
     return;
   }
+  clearMessage();
 
   if (state.phase === 'opening') {
     const color = openingRollerFor();
@@ -1087,6 +1166,12 @@ function bothSeatsClaimed(room) {
    with one branch: apply it locally, or hand it to sync.js to broadcast
    (which loops back to this tab too, via handleRoomUpdate). */
 function commitState(newState) {
+  /* Cleared here rather than left to each caller. handleRoomUpdate already
+     did this for arriving states while the hot-seat branch did not, so the
+     two paths disagreed about whose job it was - harmless while every
+     caller happened to clear it themselves, and an easy trap for the next
+     one that does not. */
+  selectedFrom = null;
   if (onlineRoom) {
     onlineRoom.sendState(newState);
   } else {
@@ -1255,6 +1340,13 @@ function handleRoomUpdate(room, color) {
   }
   rejectedStates = [];
 
+  /* Worked out by comparison rather than announced, because nothing in the
+     broadcast says a hit happened - the board simply changes underneath
+     the player it happened to, which online is no cue at all. Read before
+     `state` is replaced, since it is the difference that carries it. */
+  const hitMe =
+    onlineColor && onlineColor !== 'spectator' && wasHit(state, room.state, onlineColor);
+
   state = room.state;
   acceptedStates.push(JSON.stringify(state));
   if (acceptedStates.length > ACCEPTED_HISTORY) {
@@ -1262,6 +1354,10 @@ function handleRoomUpdate(room, color) {
   }
   selectedFrom = null;
   render();
+
+  if (hitMe) {
+    showMessage('Your checker was hit — you must bring it in from the bar.');
+  }
 }
 
 function startOnline(roomCode) {

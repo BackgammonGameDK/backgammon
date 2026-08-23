@@ -59,33 +59,38 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    instead (`.off-count`, `style.css`). Points and the bar later got the
    identical treatment once testing found they had the same unbounded-pile
    problem the bear-off tray did (see Status). Still not fixed:
-   - **Rejected clicks are silent.** Bar priority, no legal destinations,
-     wrong color, dice not yet rolled — none of these show a message,
-     unlike the existing "No legal move for N — skipped" text. `showMessage`
-     already exists and is used for exactly three other cases.
-   - **No hit announcement.** Sending an opponent's blot to the bar changes
-     the board with no accompanying message — matters most online, where
-     the other player has no other cue it happened.
-   - **Turn indicator is stale after a win** — still reads "White's turn"
-     next to "White wins!" once `state.winner` is set.
-   - **The skip message and the reason for it disappear together.**
-     `showMessage`'s 3s auto-clear (`script.js`) removes the only record of
-     *why* a turn was skipped at the same time the now-empty dice do.
+   - ~~**Rejected clicks are silent.**~~ ✅ Done. `selectionProblem` in
+     `rules.js` says which of the four rules refused a click — wrong
+     colour, dice not rolled, a checker waiting on the bar, or nowhere to
+     go — and `script.js` turns the code into a sentence. It belongs in
+     `rules.js` because it is a rule rather than presentation, which also
+     makes the reasons testable without a browser; `canSelect` is now just
+     that function returning null. Ordered most fundamental first, and only
+     spoken when the click actually landed on something, since answering
+     taps on the bare board would be noise.
+   - ~~**No hit announcement.**~~ ✅ Done, by two different routes. The
+     player doing it reads `applyMove`'s `hit`; the player it happens to is
+     told by comparing the arriving state's bar against the previous one
+     (`wasHit`), because nothing in the broadcast says a hit occurred — the
+     board simply changes underneath them.
+   - ~~**Turn indicator is stale after a win.**~~ ✅ Done — it reads "Game
+     over" instead. It says something rather than emptying because
+     `.status-row`'s height is part of the board's hand-measured budget.
+   - ~~**The skip message and the reason for it disappear together.**~~
+     ✅ Done. `showMessage` gained a sticky mode that skips the three-second
+     clear, and the skipped-turn notice uses it: it now waits for the
+     player's next action instead of a clock.
    - **The board is keyboard/screen-reader unreachable.** Only 6 controls
      (Restart, Hints, Play Online, room code, Join, Roll) are in the
      accessible tree; points and checkers are plain unlabeled `div`s with
      no role or `tabindex`, so a keyboard-only player can roll but not move.
-   - **Latent:** `animateMove` (`script.js`) clears its FLIP transform via
-     `requestAnimationFrame` plus a `transitionend` listener registered
-     `{once: true}`; neither fires in a backgrounded/hidden tab, which is
-     exactly the state a tab sits in while waiting on an opponent's move
-     online. Queued rAF callbacks do run once the tab is shown again, so
-     this is more a fragility than a confirmed bug, but it's worth clearing
-     the transform defensively rather than depending on either callback.
-   - **Minor:** `handleRoomUpdate` (`script.js`) clears `selectedFrom` on
-     every room update; `commitState`'s hot-seat branch doesn't, leaving it
-     to each caller. Every current caller does, so nothing is broken today,
-     but it's an easy trap for a future one.
+   - ~~**Latent:** `animateMove`'s FLIP transform cleanup.~~ ✅ Done — it
+     now also clears on a timeout, rather than depending on
+     `requestAnimationFrame` and `transitionend`, neither of which fires in
+     a hidden tab.
+   - ~~**Minor:** `selectedFrom` cleared inconsistently.~~ ✅ Done —
+     `commitState` clears it for both branches, so it is no longer each
+     caller's job.
 4. **Two standard backgammon "obligation" rules aren't enforced** — found by
    fuzzing `rules.js` directly (400 random games plus an exhaustive search
    over two-dice positions), not the manual playtest above. `isMoveLegal`
@@ -583,6 +588,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+The playtest papercuts were then cleared out, all but the accessibility one. A refused click now says why — wrong colour, dice not rolled, a checker waiting on the bar, or nowhere to go — with the reasons living in `rules.js`, since what stops you picking up a checker is exactly what the engine already knows. A hit is announced to both players, the one it happened to being told by comparison rather than by the broadcast, which says nothing about it. The turn indicator stops claiming a turn once the game is over. And the skipped-turn notice waits for the player's next action instead of a three-second timer, which had been clearing the explanation at the same moment the dice cleared the evidence. Two long-standing hygiene items went with them: the checker-slide animation no longer depends on callbacks a hidden tab never fires, and clearing the selection is now `commitState`'s job rather than each caller's.
 
 With strangers now able to reach a room, arriving states are no longer taken on trust. Each client checks that what it receives could actually have happened: fifteen checkers a side, possible dice, nobody bearing off on someone else's turn, and no winner who has not borne off fifteen. An impossible board, or a win that cannot be accounted for, is refused outright; anything else is refused only until it becomes clear the client has simply fallen behind, since a permanently stuck game is a worse outcome than an unpunished cheat. Undo is recognised by remembering recent states rather than by reasoning backwards through a move. None of this stops a determined opponent — it stops the crude version, and catches genuine desync bugs on the way.
 
