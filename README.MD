@@ -459,11 +459,26 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      and straightforwardly unit-testable — and it is probably the largest
      remaining gap between this and a real backgammon game. Distinct from the
      doubling cube, which is deliberately out of scope.
-   - **Flip the board in hot-seat too.** A rotate control, so two people
-     sitting opposite each other at one tablet can each play from their own
-     side. The machinery already exists — `setBoardPerspective` is a single
-     class toggle — so this is mostly a question of where the control lives
-     and whether it should persist.
+   - **Flip the board in hot-seat too.** ⏸ Not wanted for now (decided
+     2026-08-23), and the reasoning is worth keeping in case it comes back.
+     The machinery is free — `setBoardPerspective` is one class toggle —
+     but the premise was wrong: two people sitting opposite a tablet lying
+     flat already get the correct geometry for nothing, since rotating your
+     seat 180° around the screen puts Black's home at your bottom-right,
+     which is exactly what the flip produces. What is upside down for them
+     is the *text*, which reordering the rows cannot fix. The only real
+     customer is pass-the-phone hot-seat, where each player holds the
+     device upright in turn.
+
+     If it is ever built: flip when the incoming player presses Roll,
+     rather than when the outgoing player's turn ends. It needs no control
+     at all — which sidesteps the fact that a new row in `.dice-area`
+     changes `--chrome` and the only free slot, `.corner-controls`, is
+     where the destructive button already lives — and it avoids the board
+     turning over under the player still watching their own last move
+     land. One hazard: a perspective change must not share a render with a
+     move, or `animateMove` measures its before and after in different
+     orientations and every checker slides across the board.
    - **A move log.** A compact record of recent turns ("Black 13→7, 8→7").
      It would quietly settle three of item 3's findings at once — no hit
      announcement, the skip message vanishing along with the reason for it,
@@ -476,10 +491,21 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
 
    Also noted while building the "your turn" tab-title cue (item 6): the
    **Notifications API** is the only thing that would actually reach a phone
-   whose browser is in the background, which the title cannot do. It needs a
-   permission prompt and, on iOS, the site installed to the home screen as a
-   PWA — a real feature rather than a tweak, worth reaching for only if the
-   title proves too quiet in practice.
+   whose browser is in the background, which the title cannot do. ⏸ Skipped
+   for now (decided 2026-08-23), on cost of friction rather than cost of
+   money. The browser half is free — a manifest and a service worker in
+   this repo turn the site into a Progressive Web App, and the push
+   services Apple and Google run are free — but two things bite. Sending
+   the notification needs something server-side when the opponent moves;
+   Firebase Cloud Functions fits, and its free monthly quota would cover
+   this volume, but it means moving to the Blaze plan and putting a card on
+   file, and doing the push from the other player's browser instead would
+   mean shipping the signing key to clients. And on iOS the player must
+   first tap Share → Add to Home Screen and then open the game from that
+   icon for notifications to arrive at all — not a download, but a manual
+   step nobody finds unprompted. Android and desktop need only the
+   permission prompt. Re-check Safari's current behaviour before reviving
+   this; the iOS requirement is the part most likely to have moved.
 
 ## Architecture
 

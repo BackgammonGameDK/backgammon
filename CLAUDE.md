@@ -138,7 +138,7 @@ Playing online on a phone otherwise gives no sign that the opponent has moved �
 Two deliberate omissions, both worth knowing before "improving" this:
 
 - **`navigator.vibrate` cannot work here.** The spec has vibration ignored outright while the document is hidden, which is precisely the case worth signalling.
-- **The Notifications API would genuinely reach a backgrounded phone**, but it needs a permission prompt and, on iOS, an installed PWA — a different size of feature. Worth reaching for only if the title proves too quiet.
+- **The Notifications API would genuinely reach a backgrounded phone**, but it needs a permission prompt and, on iOS, the site installed to the home screen as a PWA before notifications arrive at all — a manual step nobody finds unprompted. Sending one also needs something server-side, which for this project means Firebase's paid plan even though the free quota would cover the volume. **Deliberately skipped** — see README's Future Improvements for the full reasoning before proposing it again.
 
 Its real limit: a mobile browser that discards a backgrounded tab stops running the page at all, so no title update happens either. This helps while you're briefly in another app, not when you return the next day — that case is what seat recovery in `sync.js` is for.
 
