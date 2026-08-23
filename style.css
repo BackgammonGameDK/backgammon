@@ -90,6 +90,9 @@ body {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+  /* The anchor for #message, which floats out of this column rather than
+     adding a row to it - see that rule for why. */
+  position: relative;
 }
 
 /* Column stacking by default (identical to the un-wrapped elements' previous
@@ -228,9 +231,46 @@ body {
   display: none;
 }
 
+/* Floated out of .dice-area's column rather than stacked into it, so
+   explaining a refused click never moves the board. In the flow it added a
+   row mid-game - measured at +24.5px for one line and +43px for two on a
+   portrait phone - which is jarring while playing, and worse than jarring
+   on a height-bound desktop window: --chrome is a hand-measured constant
+   that never allowed for this row, so at 1280x800 the board's bottom edge
+   went from 768px to 794.5px and a two-line message would have run it off
+   the screen outright.
+
+   Reserving a permanent line instead would hold the board still too, but
+   at the cost of a gap that an earlier pass deliberately closed and of
+   ~28px of board width at desktop - so it floats. It reads as a toast
+   anchored under the controls, needs a background to stay legible where it
+   overlaps the board's top edge, and is pointer-events: none so it can
+   never swallow a click on a point underneath it. */
 #message {
+  position: absolute;
+  /* Hangs down from the controls onto the board's top edge. Centring it
+     on the boundary instead was tried and is worse: a two-line message
+     then climbs upward and covers Roll, and a button you cannot press for
+     three seconds is a real cost where a partly-hidden top row is not -
+     those checkers are still where you last saw them. */
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  /* max-content, then capped. Without it the chip is shrink-to-fit against
+     the space left of `left: 50%` - half the row - and a one-line message
+     wrapped into four. */
+  width: max-content;
+  max-width: min(92vw, 460px);
+  padding: 5px 12px;
+  border: 1px solid #6b4226;
+  border-radius: 6px;
+  background: #1e1e1e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   color: #e0a030;
   font-style: italic;
+  text-align: center;
+  pointer-events: none;
 }
 
 #game-over {
@@ -1341,6 +1381,22 @@ button,
     align-items: center;
     justify-content: center;
     gap: 12px;
+  }
+
+  /* Back into the flow here, unlike every other breakpoint. .dice-area is
+     a sidebar beside the board, so a message row costs the board nothing -
+     measured, the board's rect is identical with and without one, since
+     its width is capped by what's left of the sidebar rather than by any
+     height budget. Floating it from a sidebar would also put it at the
+     bottom of the screen, nowhere near the click it is explaining. */
+  #message {
+    position: static;
+    transform: none;
+    max-width: none;
+    padding: 0;
+    border: none;
+    background: none;
+    z-index: auto;
   }
 
   /* Overrides the ≤900px block's 36px clearance below, which exists so
