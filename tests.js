@@ -376,6 +376,156 @@ test('a move consumes exactly one die', () => {
   assertEqual(availableDice(result.state)[0].value, 3, 'the 3 remains');
 });
 
+/* ---- validating a state that arrived from somewhere else (stage 7c) ----
+ *
+ * The lobby seats you with strangers, and sendState broadcasts whole
+ * snapshots any seated client may write. These are the checks that stand
+ * between an opponent and a fabricated board.
+ */
+
+function playingState(mutate) {
+  const state = createInitialState();
+  state.phase = 'playing';
+  state.openingRoll = null;
+  state.currentPlayer = 'white';
+  state.dice = [{ value: 3, played: false }, { value: 5, played: false }];
+  if (mutate) {
+    mutate(state);
+  }
+  return state;
+}
+
+test('states this engine produces are structurally valid', () => {
+  assert(isStructurallyValid(createInitialState()), 'a fresh game');
+  assert(isStructurallyValid(playingState()), 'a game under way');
+
+  const moved = applyMove(playingState(), 'white', 8, 5);
+  assert(moved.ok && isStructurallyValid(moved.state), 'the result of a legal move');
+  assert(isStructurallyValid(endTurn(playingState())), 'the result of ending a turn');
+});
+
+test('a state with the wrong number of checkers is rejected', () => {
+  const extra = playingState((s) => { s.points[10] = { color: 'white', count: 1 }; });
+  assert(!isStructurallyValid(extra), '16 white checkers cannot be right');
+
+  const missing = playingState((s) => { s.points[6] = { color: 'white', count: 4 }; });
+  assert(!isStructurallyValid(missing), 'and neither can 14');
+});
+
+test('structurally impossible boards are rejected', () => {
+  assert(!isStructurallyValid(playingState((s) => { s.points[10] = { color: 'white', count: 0 }; })),
+    'an empty point is null, never a zero count - which would hide a missing checker from a naive tally');
+  assert(!isStructurallyValid(playingState((s) => { s.bar.white = -1; })), 'negative bar');
+  assert(!isStructurallyValid(playingState((s) => { s.phase = 'whatever'; })), 'unknown phase');
+  assert(!isStructurallyValid(playingState((s) => { s.currentPlayer = 'green'; })), 'unknown player');
+});
+
+test('impossible dice are rejected', () => {
+  assert(!isStructurallyValid(playingState((s) => { s.dice = [{ value: 7, played: false }]; })), 'a seven');
+  assert(!isStructurallyValid(playingState((s) => { s.dice = [{ value: 0, played: false }]; })), 'a zero');
+  assert(!isStructurallyValid(playingState((s) => {
+    s.dice = [1, 2, 3].map((v) => ({ value: v, played: false }));
+  })), 'three dice - a turn holds one, two or four');
+  assert(!isStructurallyValid(playingState((s) => {
+    s.dice = [2, 2, 2, 5].map((v) => ({ value: v, played: false }));
+  })), 'four dice that are not all the same, since four can only come from doubles');
+  assert(isStructurallyValid(playingState((s) => {
+    s.dice = [2, 2, 2, 2].map((v) => ({ value: v, played: false }));
+  })), 'but genuine doubles are fine');
+});
+
+/* The crudest attack there is, and the one most worth catching. */
+test('declaring yourself the winner without bearing off is rejected', () => {
+  const claim = playingState((s) => { s.winner = 'black'; });
+  assert(!isStructurallyValid(claim), 'a winner must actually have all fifteen off');
+});
+
+test('a legal step forward is accepted', () => {
+  const before = playingState();
+  const moved = applyMove(before, 'white', 8, 5);
+  assert(isLegalSuccessor(before, moved.state, []), 'a move by the player on turn');
+  assert(isLegalSuccessor(before, endTurn(before), []), 'ending the turn');
+  assert(isLegalSuccessor(createInitialState(), rollOpeningDie(createInitialState(), 'white', () => 0.5), []),
+    'an opening die');
+});
+
+test('a restart is accepted from anywhere', () => {
+  const midGame = applyMove(playingState(), 'white', 8, 5).state;
+  assert(isLegalSuccessor(midGame, createInitialState(), []), 'either player may restart at any time');
+});
+
+test('an unchanged state is accepted, since Firebase echoes your own writes back', () => {
+  const state = playingState();
+  assert(isLegalSuccessor(state, state, []), 'a client must accept the return of its own broadcast');
+});
+
+/* The fabricated win, done properly - fifteen off and the checkers removed,
+   so the count still balances and structural validity alone would pass it. */
+test('an opponent cannot bear off while it is not their turn', () => {
+  const before = playingState();
+  const fake = playingState((s) => {
+    for (let n = 1; n <= 24; n++) {
+      if (s.points[n] && s.points[n].color === 'black') {
+        s.points[n] = null;
+      }
+    }
+    s.off.black = 15;
+    s.winner = 'black';
+  });
+
+  assert(isStructurallyValid(fake), 'it balances, so the structural checks alone let it through');
+  assert(!isLegalSuccessor(before, fake, []), 'but black cannot bear off fifteen checkers on white\'s turn');
+});
+
+test('an opponent cannot advance their own checkers out of turn', () => {
+  const before = playingState();
+  const sneaky = playingState((s) => {
+    /* Black moves 24 -> 22, which is forward for black and so lowers their
+       pip count, on a turn that belongs to white. */
+    s.points[1] = { color: 'black', count: 1 };
+    s.points[3] = { color: 'black', count: 1 };
+  });
+  assert(pipCount(sneaky, 'black') < pipCount(before, 'black'), 'the state does put black ahead');
+  assert(!isLegalSuccessor(before, sneaky, []), 'which cannot have happened while white was on turn');
+});
+
+test('being hit is allowed, since it sends the idle player backwards not forwards', () => {
+  /* One black checker moved from its opening point to 5, leaving a blot -
+     the count has to stay at fifteen or the structural checks reject the
+     setup before the interesting rule is ever reached. */
+  const before = playingState((s) => {
+    s.points[1] = { color: 'black', count: 1 };
+    s.points[5] = { color: 'black', count: 1 };
+  });
+  const hit = applyMove(before, 'white', 8, 5);
+  assert(hit.ok && hit.hit, 'the move hits');
+  assert(isLegalSuccessor(before, hit.state, []), 'a hit raises the idle player\'s pips, which is legal');
+});
+
+test('an undo is accepted by memory, being a state already seen', () => {
+  const before = playingState();
+  const moved = applyMove(before, 'white', 8, 5).state;
+
+  assert(!isLegalSuccessor(moved, before, []), 'reverting looks impossible on its own');
+  assert(isLegalSuccessor(moved, before, [JSON.stringify(before)]),
+    'but is recognised when the state was broadcast a moment ago');
+});
+
+test('a revert to a state never seen is rejected', () => {
+  const before = playingState();
+  const moved = applyMove(before, 'white', 8, 5).state;
+  /* A white checker dragged backwards, to 9 from 6 - white moves toward
+     lower numbers, so this raises white's pip count. Genuinely different
+     from `before`, and never broadcast, so memory cannot excuse it. */
+  const invented = playingState((s) => {
+    s.points[6] = { color: 'white', count: 4 };
+    s.points[9] = { color: 'white', count: 1 };
+  });
+
+  assert(!isLegalSuccessor(moved, invented, [JSON.stringify(before)]),
+    'memory covers undo, not any rewind an opponent fancies');
+});
+
 /* ---- purity and serialization (relied on by the future sync layer) ---- */
 
 test('applyMove does not mutate the state it is given', () => {

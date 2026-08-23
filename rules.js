@@ -452,3 +452,179 @@ function totalCheckers(state, color) {
   const onBoard = pointsWithColor(state, color).reduce((sum, n) => sum + state.points[n].count, 0);
   return onBoard + state.bar[color] + state.off[color];
 }
+
+/* ---- Checking a state that arrived from somewhere else (stage 7c) ------
+ *
+ * Until the lobby existed, a room could only be reached by someone who had
+ * been sent its code, so trusting whatever arrived was a fair
+ * simplification. Matchmaking seats you with strangers, and sendState
+ * broadcasts whole snapshots that any seated client may write - including
+ * one that declares them the winner.
+ *
+ * These functions do not make cheating impossible. A determined opponent
+ * can still refuse *your* states, or desync deliberately. What they stop is
+ * the crude version - spawning checkers, moving your pieces, claiming a win
+ * outright - and they catch genuine sync bugs on the way.
+ *
+ * The governing bias throughout: reject only what is definitely impossible.
+ * A false rejection breaks a legitimate game, which is a worse outcome than
+ * the cheating it would have prevented. Hence monotonicity checks rather
+ * than an attempt to replay the exact sequence of moves, which would be far
+ * more code and far likelier to refuse something legal.
+ */
+
+/* A turn holds one die, two, or four (doubles); zero between turns. */
+const POSSIBLE_DICE_COUNTS = [0, 1, 2, 4];
+
+function isCount(value, min) {
+  return Number.isInteger(value) && value >= min;
+}
+
+function hasValidPoints(state) {
+  if (!Array.isArray(state.points) || state.points.length !== POINT_COUNT + 1) {
+    return false;
+  }
+  /* Index 0 is not a point - the array is 1-based so that a point number
+     indexes it directly. */
+  if (state.points[0] !== null && state.points[0] !== undefined) {
+    return false;
+  }
+  for (let n = 1; n <= POINT_COUNT; n++) {
+    const point = state.points[n];
+    if (point === null || point === undefined) {
+      continue;
+    }
+    if (point.color !== 'white' && point.color !== 'black') {
+      return false;
+    }
+    /* An empty point is null, never { count: 0 } - a zero-count point would
+       let a tampered state hide a checker's disappearance from a naive
+       count. */
+    if (!isCount(point.count, 1)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function hasValidDice(state) {
+  if (!Array.isArray(state.dice) || !POSSIBLE_DICE_COUNTS.includes(state.dice.length)) {
+    return false;
+  }
+  const allSixSided = state.dice.every(
+    (die) => Number.isInteger(die.value) && die.value >= 1 && die.value <= 6 && typeof die.played === 'boolean'
+  );
+  if (!allSixSided) {
+    return false;
+  }
+  /* Four dice only ever come from doubles, so they must all match. */
+  return state.dice.length !== 4 || state.dice.every((die) => die.value === state.dice[0].value);
+}
+
+/* Properties every state this engine produces satisfies. Nothing here
+   depends on what came before, so it can be applied to the very first
+   state a client receives. */
+function isStructurallyValid(state) {
+  if (!state || typeof state !== 'object') {
+    return false;
+  }
+  if (state.phase !== PHASE_OPENING && state.phase !== PHASE_PLAYING) {
+    return false;
+  }
+  if (state.currentPlayer !== 'white' && state.currentPlayer !== 'black') {
+    return false;
+  }
+  if (state.winner !== null && state.winner !== 'white' && state.winner !== 'black') {
+    return false;
+  }
+  if (!state.bar || !state.off || !hasValidPoints(state) || !hasValidDice(state)) {
+    return false;
+  }
+
+  for (const color of ['white', 'black']) {
+    if (!isCount(state.bar[color], 0) || !isCount(state.off[color], 0)) {
+      return false;
+    }
+    /* The strongest single check here: checkers cannot be conjured or
+       destroyed, so any state claiming otherwise was not produced by
+       applyMove. */
+    if (totalCheckers(state, color) !== CHECKERS_PER_PLAYER) {
+      return false;
+    }
+  }
+
+  /* Declaring yourself the winner without having borne anything off is the
+     crudest attack there is, and this is where it stops. */
+  if (state.winner && state.off[state.winner] !== CHECKERS_PER_PLAYER) {
+    return false;
+  }
+
+  if (state.phase === PHASE_OPENING) {
+    if (state.dice.length !== 0 || !state.openingRoll) {
+      return false;
+    }
+    for (const color of ['white', 'black']) {
+      const value = state.openingRoll[color];
+      if (value !== null && !(Number.isInteger(value) && value >= 1 && value <= 6)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+/* A restart, which either player may perform at any time. createInitialState
+   is deterministic now that the opening roll belongs to the players, so a
+   fresh game is a single exact value to compare against. */
+function isFreshStart(state) {
+  return JSON.stringify(state) === JSON.stringify(createInitialState());
+}
+
+/* Could `next` have come from `previous` by anything the game allows?
+ *
+ * `seen` is a list of recently accepted states, as JSON, and covers two
+ * cases at once: Firebase echoing a client's own writes back to it, and an
+ * undo - which reverts to a state that was broadcast a moment ago, and so
+ * is far easier to recognise by memory than by reasoning backwards through
+ * a move.
+ */
+function isLegalSuccessor(previous, next, seen) {
+  if (!isStructurallyValid(next)) {
+    return false;
+  }
+  if (!previous) {
+    return true;
+  }
+  if (seen && seen.indexOf(JSON.stringify(next)) !== -1) {
+    return true;
+  }
+  if (isFreshStart(next)) {
+    return true;
+  }
+
+  const mover = previous.currentPlayer;
+  const idle = opponentOf(mover);
+
+  /* Only the player on turn may move, so the other one cannot have gained
+     ground: they may be sent backwards by being hit, never forwards, and
+     they certainly cannot bear off. This is what a fabricated win runs
+     into. */
+  if (next.off[idle] > previous.off[idle]) {
+    return false;
+  }
+  if (pipCount(next, idle) < pipCount(previous, idle)) {
+    return false;
+  }
+
+  /* And the player on turn cannot go backwards (nothing can hit them on
+     their own turn) nor bear off more than a turn's worth of dice. */
+  if (pipCount(next, mover) > pipCount(previous, mover)) {
+    return false;
+  }
+  if (next.off[mover] > previous.off[mover] + 4) {
+    return false;
+  }
+
+  return true;
+}
