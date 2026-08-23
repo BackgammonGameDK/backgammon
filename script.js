@@ -23,6 +23,7 @@ const undoButton = document.querySelector('#undo-button');
 const restartButton = document.querySelector('#restart-button');
 const exitButton = document.querySelector('#exit-button');
 const gameOverEl = document.querySelector('#game-over');
+const rotateHintEl = document.querySelector('#rotate-hint');
 const turnIndicator = document.querySelector('#turn-indicator');
 const messageEl = document.querySelector('#message');
 const hintsToggle = document.querySelector('#hints-toggle');
@@ -953,6 +954,46 @@ hintsToggle.addEventListener('change', () => {
   pipCountEl.hidden = !hintsEnabled;
   renderSelection();
 });
+
+/* ---- The rotate hint ----------------------------------------------------
+ * Advice, not news. It's worth saying once to someone meeting a 24-point
+ * board on a portrait phone, and pure clutter for the rest of the game to
+ * someone who has read it and decided to stay in portrait - which is a
+ * decision, not something to be nagged about every turn. So it dismisses
+ * on a tap, and the dismissal is remembered across visits: a returning
+ * player has already answered the question.
+ *
+ * Remembered in localStorage rather than sessionStorage on purpose. The
+ * preference is about this player's phone, not this tab, and a mobile
+ * browser discarding a backgrounded tab (the same behaviour seat recovery
+ * in sync.js exists for) would otherwise bring the hint back mid-game.
+ *
+ * Guarded like sync.js's lastRoomCode and for the same reason: this runs
+ * on every page load, and Safari's private mode has historically thrown on
+ * storage access. Losing the memory of a dismissal is an acceptable
+ * failure; taking the app down for someone who only wanted to play is not.
+ */
+const ROTATE_HINT_KEY = 'backgammon:rotate-hint-dismissed';
+
+function rotateHintDismissed() {
+  try {
+    return localStorage.getItem(ROTATE_HINT_KEY) === 'true';
+  } catch (error) {
+    return false;
+  }
+}
+
+function dismissRotateHint() {
+  rotateHintEl.hidden = true;
+  try {
+    localStorage.setItem(ROTATE_HINT_KEY, 'true');
+  } catch (error) {
+    /* it stays dismissed for this visit; it just comes back on the next */
+  }
+}
+
+rotateHintEl.hidden = rotateHintDismissed();
+rotateHintEl.addEventListener('click', dismissRotateHint);
 
 /* ---- Start screen -------------------------------------------------------
  * The one place a mode is chosen, and the only thing that sets
