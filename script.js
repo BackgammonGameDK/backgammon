@@ -927,6 +927,8 @@ function exitToStartScreen() {
     latestRoom = null;
     currentRoomCode = null;
     qrRenderedForRoom = null;
+    acceptedStates = [];
+    rejectedStates = [];
     roomStatusEl.hidden = true;
     qrPanelEl.hidden = true;
     document.body.classList.remove('showing-room-row');
@@ -1021,6 +1023,21 @@ let othersSearching = 0;
    spectator can be recognised as a stale advertisement rather than a
    deliberate spectate - see handleRoomUpdate. */
 let joinedFromLobby = false;
+/* Recently accepted states, as JSON, newest last. Two jobs: recognising
+   Firebase echoing this client's own writes back, and recognising an undo,
+   which reverts to a state broadcast moments ago and is far easier to
+   identify by memory than by reasoning backwards through a move. Eight
+   covers a doubles turn with slack. */
+const ACCEPTED_HISTORY = 8;
+let acceptedStates = [];
+/* Distinct states refused since the last accepted one - see
+   handleRoomUpdate for why refusing forever is not an option. Distinct
+   rather than a plain count on purpose: a client that has fallen behind
+   sees the game move on, so the states it refuses keep changing, whereas
+   the same state arriving again is far likelier to be someone leaning on
+   it. Resending one rejected board therefore gets nowhere. */
+let rejectedStates = [];
+const REJECTIONS_BEFORE_RESYNC = 3;
 
 /* The gate for "is this tab allowed to act right now": a spectator never
    is; neither is a seated player before the other seat has ever been
@@ -1189,7 +1206,60 @@ function handleRoomUpdate(room, color) {
     return;
   }
 
+  /* Anyone seated may write anything to the room, which was a fair
+     simplification while a room could only be reached by someone sent its
+     code. The lobby seats you with strangers, so an arriving state now has
+     to look like something that could actually have happened.
+
+     The streak is the important detail. A client that has missed
+     intermediate updates - a reconnect delivers only the latest state -
+     will legitimately see a jump it cannot account for, and refusing
+     forever would wedge the game permanently. That is a worse outcome than
+     an unpunished cheat, so after a few refusals in a row it accepts and
+     resynchronises. The protection is therefore against casual tampering,
+     not a determined opponent, and is deliberately biased that way. */
+  /* Two bars, not one, because they fail for different reasons.
+
+     A board that could not exist - sixteen checkers, a winner who has
+     borne nothing off - is refused outright and never resynchronised past.
+     No amount of missed traffic can produce one, so accepting it later
+     would be accepting a fabrication.
+
+     The same goes for anything that ends the game. Being talked into a
+     loss you could not verify is the worst outcome available here, so a
+     win has to arrive as a legal step or not at all.
+
+     Everything else is refused, but only for a while: a client that has
+     fallen behind sees jumps it cannot account for, and refusing forever
+     would wedge the game permanently, which is a worse and far likelier
+     harm than an unpunished cheat. */
+  if (!isStructurallyValid(room.state)) {
+    showMessage('Ignored an impossible board from your opponent.');
+    return;
+  }
+
+  if (!isLegalSuccessor(state, room.state, acceptedStates)) {
+    if (room.state.winner) {
+      showMessage('Ignored an unexplained win from your opponent.');
+      return;
+    }
+    const asJson = JSON.stringify(room.state);
+    if (rejectedStates.indexOf(asJson) === -1) {
+      rejectedStates.push(asJson);
+    }
+    if (rejectedStates.length < REJECTIONS_BEFORE_RESYNC) {
+      showMessage('Ignored an impossible move from your opponent.');
+      return;
+    }
+    showMessage('Resynchronised with your opponent.');
+  }
+  rejectedStates = [];
+
   state = room.state;
+  acceptedStates.push(JSON.stringify(state));
+  if (acceptedStates.length > ACCEPTED_HISTORY) {
+    acceptedStates.shift();
+  }
   selectedFrom = null;
   render();
 }

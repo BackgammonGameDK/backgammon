@@ -386,13 +386,32 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      narrow widths, so `--chrome` and `--online-row` were re-measured
      together at that breakpoint — which leaves a hot-seat board unchanged,
      since it spends the difference between them.
-   - **7c. Validate incoming state in `rules.js`.** Rather than trusting a
-     received snapshot, check that it's a legal successor of the state this
-     client already had. `rules.js` is pure and already knows what a legal
-     move is, so this is a self-contained, unit-testable problem in exactly
-     the shape of the rest of that file. It won't stop a determined
-     attacker — they can simply refuse to accept valid states — but it
-     stops casual cheating, and would catch desync bugs as a side effect.
+   - **7c. Validate incoming state in `rules.js`.** ✅ Done. Rather than
+     trusting a received snapshot, each client checks it is a legal
+     successor of the state it already had. `isStructurallyValid` judges one
+     state on its own — fifteen checkers a side, possible dice, a winner who
+     has actually borne off fifteen — and `isLegalSuccessor` compares two,
+     monotonically: the idle player cannot have gained ground, the player on
+     turn cannot go backwards or bear off more than a turn's worth.
+
+     Undo is handled by memory rather than by reasoning backwards: it
+     reverts to a state broadcast moments ago, so the last eight accepted
+     states are kept and a match is accepted, which covers Firebase echoing
+     a client's own writes as well.
+
+     Two bars, not one. A structurally impossible board, or an unexplained
+     win, is refused outright and never resynchronised past — no missed
+     traffic can produce either, and being talked into a loss you cannot
+     verify is the worst outcome available. Anything else is refused only
+     until three *distinct* unexplainable states have arrived, at which
+     point the client accepts and resynchronises: falling behind is far
+     likelier than being attacked, and a permanently wedged game is a worse
+     harm. Distinct rather than a count means resending one rejected board
+     gets nowhere.
+
+     As predicted, this does not stop a determined attacker; it stops the
+     crude version and catches desync bugs. Verified against a real second
+     client attempting fabricated wins.
 
    Finish items 5d and 5e first regardless. 5e collides with this
    specifically: once both players must roll to start, a stranger who
@@ -564,6 +583,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+With strangers now able to reach a room, arriving states are no longer taken on trust. Each client checks that what it receives could actually have happened: fifteen checkers a side, possible dice, nobody bearing off on someone else's turn, and no winner who has not borne off fifteen. An impossible board, or a win that cannot be accounted for, is refused outright; anything else is refused only until it becomes clear the client has simply fallen behind, since a permanently stuck game is a worse outcome than an unpunished cheat. Undo is recognised by remembering recent states rather than by reasoning backwards through a move. None of this stops a determined opponent — it stops the crude version, and catches genuine desync bugs on the way.
 
 The start screen and the board were then rebalanced around that. Finding an opponent is the ordinary way to play now, so it leads and is the only filled button; hot-seat and Rejoin are outlined beneath it, and the room-code field folds away behind a quiet "Have a room code?" toggle, codes being a fallback for someone who was sent one rather than something everyone should read past. The room status row went the same way: it now earns its space only while it has something to say — waiting for an opponent, or one who disconnected or left — and disappears during an ordinary game, where the code is in the address bar anyway. The board grows into that space, about 56px wider at desktop, and the row comes back by itself when there is news, bringing Copy link and QR with it exactly when re-inviting someone is what you want.
 

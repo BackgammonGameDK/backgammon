@@ -142,6 +142,25 @@ Two deliberate omissions, both worth knowing before "improving" this:
 
 Its real limit: a mobile browser that discards a backgrounded tab stops running the page at all, so no title update happens either. This helps while you're briefly in another app, not when you return the next day — that case is what seat recovery in `sync.js` is for.
 
+### Checking a state that arrived from somewhere else (`isStructurallyValid`, `isLegalSuccessor`)
+
+`sendState` broadcasts whole snapshots and any seated client may write one, which was a fair simplification while a room could only be reached by someone sent its code. **The lobby seats you with strangers**, so an arriving state is now checked before it is believed.
+
+Both functions live in `rules.js` and are pure, so the whole thing is unit-testable without a browser.
+
+- `isStructurallyValid(state)` — properties every state this engine produces satisfies, judged one state at a time: fifteen checkers a side, points that are `null` rather than zero-count, dice of 1-6 in counts of 0/1/2/4 (four only from doubles, so all equal), a known phase and player, and **a winner who has actually borne off fifteen**.
+- `isLegalSuccessor(previous, next, seen)` — could `next` have come from `previous`? A restart is always allowed (either player may, and `createInitialState` is deterministic so it is one exact value to compare against). Otherwise the checks are monotonic: the idle player cannot have gained ground (their `off` cannot rise, their pips cannot fall — being hit raises them, which is legal), and the player on turn cannot go backwards or bear off more than four.
+
+**`seen` is how undo is handled** — by memory, not by reasoning backwards. An undo reverts to a state broadcast moments ago, so `script.js` keeps the last eight accepted states and an incoming match is accepted. That covers Firebase echoing a client's own writes too.
+
+**`handleRoomUpdate` applies two bars, not one**, and the distinction is the important part:
+
+- **A structurally impossible board is refused outright, always.** No amount of missed traffic can produce sixteen checkers, so accepting one later would be accepting a fabrication.
+- **So is an unexplained win.** Being talked into a loss you could not verify is the worst outcome available here, so a win must arrive as a legal step or not at all.
+- **Everything else is refused only for a while.** A client that has fallen behind — a reconnect delivers only the latest state — legitimately sees jumps it cannot account for, and refusing forever would wedge the game permanently. That is a worse and far likelier harm than an unpunished cheat, so after three *distinct* refused states it accepts and resynchronises. Distinct rather than a plain count on purpose: a client that is behind watches the game move on, so what it refuses keeps changing, whereas the same board arriving again is far likelier to be someone leaning on it. Resending one rejected board therefore gets nowhere.
+
+**The governing bias throughout: reject only what is definitely impossible.** A false rejection breaks a legitimate game, which is worse than the cheating it prevents — hence monotonicity rather than replaying the exact move sequence, which would be far more code and far likelier to refuse something legal. Two things are deliberately not attempted: detecting dice fraud (a client rolling well is indistinguishable from luck without a shared seed) and enforcing that a move used a die legally, which is item 4's territory and should not wait on this.
+
 ### The lobby (`sync.js`'s lobby section, `findOrStartRoom`)
 
 Two people who both pressed "play online" used to land in two different empty rooms and wait for each other forever — the codes are random, so they never met. The lobby closes that.
