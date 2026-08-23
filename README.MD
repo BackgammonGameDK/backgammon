@@ -293,10 +293,31 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    worse than it sounds: a first-time visitor taps "Find an opponent",
    waits, nothing happens, and concludes the game is broken. An invite link
    never does that; it either works or it's visibly obvious the other
-   person hasn't opened it yet. So the honest framing isn't "get matched
-   fast" but "be visible to anyone else who is also looking", which means
-   showing the queue state plainly (*"you're 1 of 1 waiting"*) and keeping
-   the invite link as the primary way in rather than demoting it.
+   person hasn't opened it yet.
+
+   The mitigation, settled on before starting: **make an empty queue
+   degrade into the flow that already works.** Three parts.
+
+   Show the real count rather than a spinner — `/lobby` has to be
+   world-readable for matchmaking at all, so a waiting client can simply
+   count the other entries and say "nobody else is looking right now" or
+   "1 other person searching". That is a status which tells you something,
+   rather than one that merely proves the page hasn't frozen.
+
+   Offer the invite link *in* the waiting state, with the existing Copy
+   link and QR controls. If nobody is queuing, the useful action is not to
+   keep waiting but to send a friend the link.
+
+   And create the room when someone starts **searching**, not when they are
+   matched. Then there is one waiting state and either kind of opponent
+   resolves it — somebody paired from the queue, or a friend opening the
+   link — whichever arrives first. The lobby stops being a separate mode
+   and becomes another door into the room you are already sitting in.
+
+   One consequence to plan for: rooms would then be created by searching
+   rather than by playing, which is a great many more rooms. That is part
+   of why `lastActive` landed first, and why a never-played room carrying
+   no timestamp at all turns out to be the right signal.
 
    **Strangers versus the trust model.** The decision recorded under item 2
    — friend-level trust, each client validating only its own moves, with
@@ -325,12 +346,25 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
    a stranger can touch. Database rules can validate an entry's *shape* but
    not its *volume*, so nothing would stop someone flooding the queue.
 
-   Suggested sequence, if it's built:
+   Suggested sequence, if it's built — **7b first, then 7a**, which
+   reverses the obvious order deliberately. The biggest open question about
+   the whole feature is whether anyone is ever *in* the queue, and 7a is
+   pure infrastructure that answers nothing; building it first would mean
+   hardening a feature before knowing whether it is worth having. With the
+   graceful degradation above, a null result costs the user nothing.
+
+   Two things make deferring auth acceptable rather than reckless: a
+   griefed lobby does not touch existing games, since rooms live under a
+   separate path with their own rules, so the blast radius is the queue
+   node; and database rules can still validate the *shape* of a queue entry
+   without identity — enough to stop `/lobby` being used as free storage,
+   even if not enough to stop volume.
+
    - **7a. Firebase Anonymous Auth.** Every client silently gets a UID — no
      signup, no build step, one more `-compat.js` script. It's what makes
      a rule like "you may only write your own queue entry" enforceable
-     rather than aspirational, and nothing else in the lobby's security is
-     real without it.
+     rather than aspirational. Best treated as the hardening step the
+     lobby earns once it has proved it attracts anyone at all.
    - **7b. The lobby.** The transaction-based pairing above, with honest
      queue-state UI rather than an indefinite spinner.
    - **7c. Validate incoming state in `rules.js`.** Rather than trusting a
