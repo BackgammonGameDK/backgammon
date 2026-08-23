@@ -78,6 +78,20 @@ function lastRoomCode() {
   }
 }
 
+/* Drops the offer of a room this client has just deleted, so the start
+   screen does not invite anyone back into a record that no longer exists.
+   Only for that room: a code stored since is a newer game, and this is
+   called on the way out of an old one. */
+function forgetRoom(roomCode) {
+  try {
+    if (localStorage.getItem(LAST_ROOM_KEY) === roomCode) {
+      localStorage.removeItem(LAST_ROOM_KEY);
+    }
+  } catch (error) {
+    /* the stale offer survives, which is the cost described in roomIsSpent */
+  }
+}
+
 /* Short, easy to read aloud or type into a second device. Skips 0/O and
    1/I, which are the pairs people actually mistype. Six characters (up
    from Stage C's four) because a room now only needs to be found by
@@ -241,10 +255,67 @@ function attachPresence(db, roomCode, color) {
     });
   };
   connectedRef.on('value', handler);
+  /* Unhooks the listener and nothing else. Clearing the entry is left to
+     leave(), which does it inside the room transaction - deliberately, and
+     the hard way round: a set() or remove() anywhere on the transaction's
+     path, ancestor or descendant, *cancels* that transaction, and Firebase
+     reports it as an error whose whole message is the name of the offending
+     operation ("set"). Removing presence here alongside a transaction on
+     the room above it therefore killed the transaction every time, and
+     silently - the room simply never got cleaned up. Found against the live
+     database; the fake now models it too. */
   return () => {
     connectedRef.off('value', handler);
-    presenceRef.remove();
   };
+}
+
+/* Whether a room would have nothing left in it once `leavingColor` walks
+   out - the one question a client is allowed to answer about deleting a
+   room, and pure so it can be tested on its own.
+ *
+ * Nothing else deletes rooms. `database.rules.json` grants access only to
+ * a room whose code you already know, there is no listing, and no client
+ * has any business removing somebody else's game, so general cleanup stays
+ * a Firebase-console job. These two cases are the exceptions because the
+ * client leaving is the last person who could ever want the record.
+ *
+ * **Never played.** No `state` at all means the second seat was never
+ * filled: White seeds the starting position as soon as both seats are
+ * claimed, so a stateless room is one nobody ever arrived at. The lobby
+ * creates a room every time somebody starts *searching* rather than every
+ * time a game happens, so this is the common case by far - most rooms are
+ * advertisements nobody answered.
+ *
+ * **Finished and abandoned.** A game with a winner that both players have
+ * deliberately left. Not merely disconnected: `departed` is set only by
+ * Exit, and attachPresence clears it whenever a seat is reoccupied, so
+ * this cannot fire on someone whose train went into a tunnel.
+ *
+ * Reads only `seats`, `departed` and `state.winner`, all of which look the
+ * same raw as deserialized - so it works inside a transaction on Firebase's
+ * own shape and on script.js's cleaned-up one. `state == null` covers both
+ * a missing key and an explicit null for the same reason handleRoomUpdate
+ * does.
+ *
+ * The residual cost, accepted: deleting a room does not reach the other
+ * player's storage, so their start screen may still offer "Rejoin room
+ * ABCDEF" for a room that is gone. Pressing it puts them alone in a fresh
+ * empty room of the same name, which is confusing for one screen and
+ * costs nothing. The client doing the deleting forgets the code itself
+ * (see forgetRoom). */
+function roomIsSpent(room, leavingColor) {
+  if (!room || leavingColor === 'spectator') {
+    return false;
+  }
+  const seats = room.seats || {};
+  if (room.state == null) {
+    return !(seats.white && seats.black);
+  }
+  if (!room.state.winner) {
+    return false;
+  }
+  const departed = { ...room.departed, [leavingColor]: true };
+  return Boolean(departed.white && departed.black);
 }
 
 function seatFor(seats, clientId) {
@@ -433,13 +504,47 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, recoveredC
      A spectator never sets it: there is no seat for anyone to be waiting
      on, so there is nothing to announce. */
   function leave({ departed } = {}) {
-    if (departed && color !== 'spectator') {
-      db.ref('rooms/' + roomCode + '/departed/' + color).set(true);
-    }
     if (valueHandler) {
       roomRef.off('value', valueHandler);
     }
+    /* Before the transaction below, and writing nothing - see attachPresence
+       for why any concurrent write would cancel it. */
     detachPresence();
+
+    /* A spectator leaves no trace to clean up: no seat, no presence entry,
+       and nothing anyone is waiting on. */
+    if (color !== 'spectator') {
+      /* One transaction rather than a write followed by a check. Marking
+         the departure and deciding whether that empties the room are the
+         same question, and splitting them would mean acting on a room
+         record read before our own flag landed in it.
+
+         `current === null` is Firebase's optimistic first pass against an
+         empty local cache, not "already gone" - see claimWaitingRoom for
+         the live bug that cost. Returning null there means "delete", which
+         is a no-op on a node that does not exist and lets the retry with
+         the real value make the actual decision. Aborting with undefined
+         is the thing that must never happen on that pass.
+
+         Clearing presence is this transaction's job rather than
+         attachPresence's, because a separate remove() on a path inside the
+         room would cancel the transaction outright - see the note there.
+         Writing the whole record back also means a stale snapshot could
+         resurrect an entry a separate removal had already taken out, which
+         doing both in one write avoids by construction. */
+      roomRef.transaction((current) => {
+        if (!current) {
+          return null;
+        }
+        if (current.presence) {
+          delete current.presence[color];
+        }
+        if (departed) {
+          current.departed = { ...current.departed, [color]: true };
+        }
+        return roomIsSpent(current, color) ? null : current;
+      });
+    }
   }
 
   return {
