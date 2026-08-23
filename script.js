@@ -1329,6 +1329,14 @@ function handleRoomUpdate(room, color) {
     if (color === 'white' && bothSeatsClaimed(room)) {
       onlineRoom.sendState(createInitialState());
     }
+    /* There is no board to adopt yet, but this client is online now and
+       the last render happened before it was - so without this the screen
+       keeps the backdrop's turn indicator ("White, roll to see who
+       starts") and a Roll button disabled from when no game had started,
+       neither of which is true any more. Every exit from this function
+       has to leave the screen saying something true; that is the whole
+       job of the render() calls on the refusal paths below too. */
+    render();
     return;
   }
 
@@ -1361,12 +1369,36 @@ function handleRoomUpdate(room, color) {
      harm than an unpunished cheat. */
   if (!isStructurallyValid(room.state)) {
     showMessage('Ignored an impossible board from your opponent.');
+    render();
     return;
   }
 
-  if (!isLegalSuccessor(state, room.state, acceptedStates)) {
+  /* isLegalSuccessor judges a *step*, so there has to be a state to have
+     stepped from. On joining there is not: what is on screen is the
+     pre-game backdrop, which this room never produced. A game in progress
+     is not a legal step from it either - the opponent has been moving all
+     along, so by the backdrop's reckoning they have gained ground on a
+     turn that is not theirs, which is exactly the fabricated-win shape the
+     check exists to catch.
+
+     Passing `null` is isLegalSuccessor's own seam for this, and it means
+     structural validity is the whole bar for the first state a room hands
+     over. That is the right bar: there is nothing to contradict, and a
+     board that was already there when you arrived is not something you
+     could verify by any amount of checking.
+
+     This is what wedged a game both players rejoined. Each refused the
+     real board, and neither could resynchronise past it - that takes three
+     *distinct* refusals, and a room where both players are stuck sends
+     nothing further. The screen kept its pre-online render, so both saw
+     "White, roll to see who starts" over a board that had moved on, with
+     Roll disabled and no way back in. */
+  const baseline = acceptedStates.length ? state : null;
+
+  if (!isLegalSuccessor(baseline, room.state, acceptedStates)) {
     if (room.state.winner) {
       showMessage('Ignored an unexplained win from your opponent.');
+      render();
       return;
     }
     const asJson = JSON.stringify(room.state);
@@ -1375,6 +1407,7 @@ function handleRoomUpdate(room, color) {
     }
     if (rejectedStates.length < REJECTIONS_BEFORE_RESYNC) {
       showMessage('Ignored an impossible move from your opponent.');
+      render();
       return;
     }
     showMessage('Resynchronised with your opponent.');
@@ -1405,6 +1438,13 @@ function startOnline(roomCode) {
   currentRoomCode = roomCode;
   rememberRoom(roomCode);
   leaveStartScreen();
+  /* Cleared here rather than only in exitToStartScreen, so that "nothing
+     has arrived from this room yet" is a fact about joining a room rather
+     than a promise every caller has to have kept. handleRoomUpdate reads
+     an empty acceptedStates as "no predecessor to judge the first state
+     against", which is only true if entering a room always resets it. */
+  acceptedStates = [];
+  rejectedStates = [];
   roomStatusEl.hidden = false;
   onlineRoom = joinRoom(roomCode, { onRoom: handleRoomUpdate });
 }
