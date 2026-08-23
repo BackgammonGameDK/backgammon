@@ -95,6 +95,18 @@ The switch-selection branch exists because a click on a different own-color chec
 
 `animateMove(checker, moveFn)` wraps any `appendChild`-based re-parenting (a move is just moving a `.checker` div into a different container) with the FLIP technique: measure position before, perform the DOM move, measure after, apply an inverse `transform` with no transition, then clear it on the next frame with `.checker.animating`'s CSS transition so the browser animates the slide. This only touches `transform`, so it's safe to layer onto the flex-layout-driven structure without other changes. It's called from inside `renderCheckers`'s reconciliation now, not from individual move handlers — any new re-parenting path should go through reconciliation rather than a bare `appendChild`.
 
+### Restart asks twice (`restartNeedsConfirming`, `armRestart`)
+
+Restart wipes a game in progress for **both** players, either of them can press it at any time, and unlike Exit it isn't recoverable — the start screen can offer a room back, but not a board. On a phone it sat one mis-tap from destroying a live game, and putting Exit beside it made that likelier.
+
+So a mid-game Restart **arms on the first press and acts on the second**, showing "Restart?" in amber with a hint in `#message`. Two deliberate taps in the same place is a real guard against the actual threat — a slipped thumb — and costs nothing when the press was meant. A native `confirm()` would be blunter and a modal more code; neither buys anything against a mis-tap.
+
+`restartNeedsConfirming()` is `state.phase === 'playing' && !state.winner`. A finished game or one still deciding who starts restarts on the **first** press, because "are you sure you want to play again?" is a question nobody needs asked. **Play Again on the win overlay never confirms** — a new game is the entire point of that button.
+
+Two things disarm it besides the second press: a 4-second timeout, and **any state change at all** (`disarmRestart()` runs at the top of `render()`). The second matters more than it looks: the confirmation was armed over a particular board, and if that board has moved on — the opponent played, or restarted themselves — the second tap would be answering a question nobody is asking any more. It fails toward *not* restarting.
+
+Still unsolved, and worth knowing: **the other player gets no say.** One player's confirmed Restart still ends the other's game without warning. A restart *request* the opponent accepts is a bigger feature; this only stops the accident.
+
 ### Taking a move back (`turnHistory`, `undoLastMove`)
 
 Mis-taps are easy on a phone-sized board, so the last move of the current turn can be taken back, restoring both the board and the die it consumed.

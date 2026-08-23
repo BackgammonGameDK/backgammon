@@ -575,6 +575,11 @@ function renderSelection() {
 }
 
 function render() {
+  /* Any state change disarms. The confirmation was armed over a particular
+     board, and if that board has moved on - the opponent played, or
+     restarted themselves - the second tap would be answering a question
+     nobody asked any more. Fails toward not restarting. */
+  disarmRestart();
   pruneUndoHistory();
   undoButton.disabled = !canUndo();
   renderDocumentTitle();
@@ -795,7 +800,67 @@ function restartGame() {
   commitState(createInitialState());
 }
 
-restartButton.addEventListener('click', restartGame);
+/* Restart wipes a game in progress for *both* players, either of them can
+   press it at any time, and it is not recoverable the way Exit is - the
+   start screen can offer a room back, but not a board. On a phone it sat
+   one mis-tap away from destroying a live game, and putting Exit beside it
+   made that likelier rather than less.
+
+   So a mid-game Restart arms first and acts on the second press. Two
+   deliberate taps in the same place is a real guard against the actual
+   threat, which is a mis-tap, and it costs nothing when the press was
+   meant. A native confirm() would be blunter and a modal would be more
+   code; neither buys anything against a slipped thumb.
+
+   Only when there is something to lose: a finished game or one still
+   deciding who starts restarts on the first press, because "are you sure
+   you want to play again?" is a question nobody needs asked. */
+const RESTART_ARM_MS = 4000;
+let restartArmed = false;
+let restartArmTimer = null;
+
+function restartNeedsConfirming() {
+  return state.phase === 'playing' && !state.winner;
+}
+
+function renderRestartLabel() {
+  restartButton.textContent = restartArmed ? 'Restart?' : 'Restart';
+  restartButton.classList.toggle('armed', restartArmed);
+}
+
+function disarmRestart() {
+  if (!restartArmed) {
+    return;
+  }
+  restartArmed = false;
+  clearTimeout(restartArmTimer);
+  restartArmTimer = null;
+  renderRestartLabel();
+}
+
+function armRestart() {
+  restartArmed = true;
+  renderRestartLabel();
+  showMessage('Tap Restart again to start a new game.');
+  clearTimeout(restartArmTimer);
+  restartArmTimer = setTimeout(disarmRestart, RESTART_ARM_MS);
+}
+
+restartButton.addEventListener('click', () => {
+  if (!restartNeedsConfirming()) {
+    restartGame();
+    return;
+  }
+  if (restartArmed) {
+    disarmRestart();
+    restartGame();
+    return;
+  }
+  armRestart();
+});
+
+/* Play Again lives on the win overlay, where a new game is the entire
+   point of the button - there is nothing left to protect. */
 playAgainButton.addEventListener('click', restartGame);
 
 /* Dismiss on any click on the backdrop, but not one that started inside
@@ -870,6 +935,7 @@ function exitToStartScreen() {
   state = idleState();
   selectedFrom = null;
   turnHistory = [];
+  disarmRestart();
   celebrationShownFor = null;
   celebrationEl.hidden = true;
   messageEl.textContent = '';
