@@ -257,10 +257,28 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      acting on it). Online it broadcasts, so the opponent sees the checker
      go back, which is what taking a move back looks like across a real
      board.
-   - **Room lifecycle.** Nothing ever deletes `/rooms/<code>`, so rooms
-     accumulate indefinitely. Not urgent at friend scale, but recording a
-     `lastActive` timestamp now is what would make cleanup possible later —
-     and a day-old abandoned room is exactly the case 5a is about.
+   - ~~**Room lifecycle.**~~ ✅ Partly done — the timestamp half.
+     `lastActive` is now written on every state broadcast, using Firebase's
+     server-timestamp sentinel rather than `Date.now()` so a device with a
+     wrong clock cannot make a dead room look fresh. Nothing writes it on
+     join, so a room whose second player never arrived has no `lastActive`
+     at all, which says something more useful than a timestamp would: never
+     played, rather than played and gone quiet.
+
+     **Deleting is still not done, and cannot be from the client:**
+     `database.rules.json` grants access only to a room whose code you
+     already know, there is no listing, and no client has any business
+     removing someone else's room. Cleanup is a Firebase-console job until
+     there is a scheduled one, which needs the paid plan. What this stage
+     buys is that stale rooms are now *identifiable*.
+
+     One cleanup a client genuinely could do, deliberately left out: when a
+     game has a winner and both players have pressed Exit, the second one
+     to leave could delete the room outright — both conditions are already
+     in the record (`state.winner` and the two `departed` flags), and
+     `remove()` is idempotent so a race is harmless. Left out because
+     deleting is destructive and someone may want to reopen a finished game
+     to look at the final board.
 
 7. **Matchmaking lobby** — pair two people who are looking for a game at the
    same time, instead of requiring one of them to send the other a link.
@@ -486,6 +504,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+Rooms now record a `lastActive` timestamp on every broadcast, so a stale one can be told from a live one. It uses Firebase's server clock rather than the device's, since a phone with the wrong time would otherwise make a dead room look fresh; and nothing writes it on join, so a room whose second player never showed up has no timestamp at all — which says "never played" rather than "played and went quiet". Deleting rooms is still not possible from the client, and deliberately so: the database rules grant access only to a room whose code you already know, so cleanup remains a console job until there is a scheduled one.
 
 The last move of a turn can now be taken back, restoring the board and the die it used — mis-taps being easy on a phone-sized board. The undo stack lives in the UI rather than in the game state, since it is nobody else's business, and each entry carries a snapshot of what the board looked like just after its move: an undo is only offered while the live board still matches, so a history left stale by the opponent restarting mid-turn can never be committed. It is refused during the opening roll, which would otherwise be a way to re-roll for who starts, and once a turn has ended. The button shares Roll's row rather than taking one of its own, and is padded to match Roll's height to the pixel, because a taller row would quietly eat into the board's hand-measured height budget.
 

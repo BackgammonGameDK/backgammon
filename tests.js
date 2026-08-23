@@ -484,6 +484,27 @@ function stripNulls(value) {
   return value;
 }
 
+/* Firebase replaces a ServerValue sentinel with the server's own clock at
+   write time. A fake that stored the sentinel object verbatim would let a
+   test pass while the real database wrote something quite different - the
+   same class of gap stripNulls exists to close. */
+function resolveServerValues(value, serverTime) {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+  if (value['.sv'] === 'timestamp') {
+    return serverTime();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => resolveServerValues(entry, serverTime));
+  }
+  const out = {};
+  Object.keys(value).forEach((key) => {
+    out[key] = resolveServerValues(value[key], serverTime);
+  });
+  return out;
+}
+
 /* The store is a real nested tree (not a flat map keyed by path string),
    because presence (rooms/<code>/presence/<color>) has to show up when
    something reads the room as a whole (rooms/<code>) - exactly like real
@@ -530,7 +551,7 @@ function createFakeDatabase() {
       node = node[key];
     }
     const leaf = parts[parts.length - 1];
-    const cleaned = stripNulls(value);
+    const cleaned = stripNulls(resolveServerValues(value, serverNow));
     if (cleaned === undefined) {
       delete node[leaf];
     } else {
@@ -567,7 +588,15 @@ function createFakeDatabase() {
     }
   }
 
-  return {
+  /* The clock the sentinel resolves against. Tests pin _serverTime to make
+     "this came from the server, not the client" assertable: a pinned value
+     is one no client-side Date.now() could have produced. */
+  function serverNow() {
+    return db._serverTime !== null ? db._serverTime : Date.now();
+  }
+
+  const db = {
+    _serverTime: null,
     ref(path) {
       return {
         transaction(updateFn) {
@@ -661,6 +690,8 @@ function createFakeDatabase() {
       notify(path);
     },
   };
+
+  return db;
 }
 
 test('the first client to join an empty room is seated white', async () => {
@@ -1170,6 +1201,102 @@ test('a spectator leaving announces nothing, having no seat to leave', async () 
   c.leave({ departed: true });
   await waitFor(() => true);
   assert(!room.departed, 'a spectator has no seat, so there is nobody waiting on one to announce to');
+});
+
+/* ---- sync.js: lastActive, for telling stale rooms apart ----
+ *
+ * Nothing deletes rooms - database.rules.json grants access only to a room
+ * whose code you already know, there is no listing, and no client has any
+ * business removing someone else's room. What this buys is the ability to
+ * *identify* dead rooms, from the Firebase console today and from a
+ * scheduled job later.
+ */
+
+test('a room nobody has played carries no lastActive at all', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  assert(room.lastActive === undefined, 'joining is not activity - an unplayed room should be recognisable as never having been a game');
+});
+
+test('sending state records lastActive as a resolved number', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  a.sendState(createInitialState());
+  await waitFor(() => room.lastActive !== undefined);
+
+  assertEqual(typeof room.lastActive, 'number', 'the sentinel must arrive resolved, not stored as a { ".sv": "timestamp" } object');
+});
+
+test('lastActive comes from the server clock, not the client', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  /* A value no client-side Date.now() could produce. If this ever gets
+     "simplified" to a local clock, this is the test that fails - and it
+     matters, because a device with a wrong clock would otherwise make a
+     dead room look fresh or bury a live one. */
+  db._serverTime = 4242;
+
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  a.sendState(createInitialState());
+  await waitFor(() => room.lastActive !== undefined);
+
+  assertEqual(room.lastActive, 4242, 'written through the server-timestamp sentinel');
+});
+
+test('a later move advances lastActive', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  db._serverTime = 1000;
+
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  a.sendState(createInitialState());
+  await waitFor(() => room.lastActive === 1000);
+
+  db._serverTime = 2000;
+  a.sendState(withRoll(createInitialState(), [3, 5]));
+  await waitFor(() => room.lastActive === 2000);
+});
+
+test('recording lastActive leaves presence, seats and departed alone', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  /* Observed through `a`, the client that stays: leave() detaches the
+     leaver's own listener, so watching through `b` would go blind at
+     exactly the moment this test cares about. */
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => b.color !== 'spectator');
+  await waitFor(() => room.presence && room.presence.white === true && room.presence.black === true);
+
+  /* Give black a departed flag to defend too, so the update() carrying
+     lastActive has every other key of the record to step on. */
+  b.leave({ departed: true });
+  await waitFor(() => room.departed && room.departed.black === true);
+
+  a.sendState(withRoll(createInitialState(), [2, 4]));
+  await waitFor(() => room.lastActive !== undefined);
+
+  assertEqual(room.presence.white, true, "white's own presence survives its own write");
+  assertEqual(room.departed.black, true, "black's departure is not erased by white moving");
+  assertEqual(room.seats.white, 'c1', 'seats are untouched');
+  assertEqual(room.seats.black, 'c2', 'both of them');
 });
 
 /* ---- serializeState / deserializeState: Firebase's null-stripping ----

@@ -7,8 +7,9 @@
  * joinRoom(...)'s callback timing (onRoom never fires synchronously), which
  * is what Firebase's onValue naturally does too.
  *
- * The room record at /rooms/<code> is Stage C's, plus two keys added
- * since: { seats: {white, black}, state, seq, presence, departed }.
+ * The room record at /rooms/<code> is Stage C's, plus the keys added
+ * since: { seats: {white, black}, state, seq, presence, departed,
+ * lastActive }.
  * database.rules.json restricts
  * read/write to a specific room path, and only to someone who already
  * knows its code - there is no listing, no accounts, matching the
@@ -37,6 +38,21 @@ const RECOVERY_ID_PREFIX = 'bg:seat:';
    invite link. One value, not one per room - "the room I was in" is
    singular, and a list would be a history feature nobody asked for. */
 const LAST_ROOM_KEY = 'bg:last-room';
+
+/* Firebase's server-timestamp sentinel: the database replaces this exact
+   object with its own clock at write time. Written literally rather than
+   read from firebase.database.ServerValue.TIMESTAMP - which is precisely
+   this value - to preserve something that matters for testing:
+   defaultDatabase() is the only place in this file that touches the
+   `firebase` global, which is what lets both runners exercise sync.js
+   without the SDK loaded at all. tests.html in particular loads only
+   rules.js, sync.js and tests.js, so a second global reference would throw
+   there rather than politely fall back.
+
+   Server time, not Date.now(), because the point of the value is deciding
+   which rooms are stale: a device with a wrong clock would otherwise make
+   a dead room look fresh, or bury a live one. */
+const SERVER_TIMESTAMP = { '.sv': 'timestamp' };
 
 /* Guarded, unlike identityFor's storage access, for a reason worth
    stating: identityFor only runs when someone actually joins a room,
@@ -392,7 +408,17 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, recoveredC
   function sendState(state) {
     const next = { seats: latestRoom.seats, state: serializeState(state), seq: (latestRoom.seq || 0) + 1 };
     latestRoom = { ...latestRoom, ...next };
-    roomRef.update(next);
+    /* lastActive rides along on the same update() rather than a write of
+       its own, so it cannot land separately from the move that caused it.
+       Kept out of the optimistic latestRoom merge above deliberately: until
+       the server resolves it, it is a sentinel rather than a time, and
+       latestRoom is only ever read for seats and seq anyway.
+
+       Nothing writes it on join. A room whose second player never arrived
+       therefore has no lastActive at all, which is a more useful signal
+       than a timestamp would be: it says the room was never played, rather
+       than played and gone quiet. */
+    roomRef.update({ ...next, lastActive: SERVER_TIMESTAMP });
   }
 
   /* `departed: true` says this client is leaving on purpose, as opposed to
