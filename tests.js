@@ -599,15 +599,37 @@ function createFakeDatabase() {
     _serverTime: null,
     ref(path) {
       return {
+        /* An update function returning undefined aborts the transaction,
+           writing nothing - which is how a caller says "somebody beat me
+           to this". The fake honoured neither half before the lobby
+           needed it: it wrote undefined (deleting the node) and reported
+           committed regardless, so a losing racer would have looked like
+           a winner. */
         transaction(updateFn) {
           return new Promise((resolve) => {
             setTimeout(() => {
               const current = getNode(path) ?? null;
               const next = updateFn(current);
+              if (next === undefined) {
+                resolve({ committed: false, snapshot: { val: () => current } });
+                return;
+              }
               writeNode(path, next);
               notify(path);
               const committed = getNode(path) ?? null;
               resolve({ committed: true, snapshot: { val: () => committed } });
+            }, 0);
+          });
+        },
+        /* Resolves asynchronously like every other call here, so a caller
+           that reads the lobby and then acts on it is still exposed to
+           anything that happened in between - which is the whole point of
+           the claim being a transaction. */
+        once(event) {
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              const value = getNode(path);
+              resolve({ val: () => (value === undefined ? null : value) });
             }, 0);
           });
         },
@@ -672,6 +694,12 @@ function createFakeDatabase() {
               return Promise.resolve().then(() => {
                 disconnectActions[path] = { type: 'set', value };
               });
+            },
+            /* Withdraws a registered action, for when a client tidies up
+               deliberately rather than by vanishing. */
+            cancel() {
+              delete disconnectActions[path];
+              return Promise.resolve();
             },
           };
         },
@@ -1297,6 +1325,157 @@ test('recording lastActive leaves presence, seats and departed alone', async () 
   assertEqual(room.departed.black, true, "black's departure is not erased by white moving");
   assertEqual(room.seats.white, 'c1', 'seats are untouched');
   assertEqual(room.seats.black, 'c2', 'both of them');
+});
+
+/* ---- sync.js: the lobby (stage 7b) ----
+ *
+ * Advertises rooms wanting a second player, rather than players wanting
+ * games. The searcher who arrives second does all the matching; the one
+ * who advertised just sits in their room, where a claimed advertisement
+ * and a texted invite link are indistinguishable by the time they matter.
+ */
+
+/* Every fake operation resolves on a later tick, deliberately - so a test
+   must wait for the lobby to actually reflect a write rather than assume
+   it has landed. `waitFor(async () => true)` does not do that: a Promise
+   is truthy, so such a condition passes on its first poll having waited
+   for nothing. This watches the real list instead. */
+function lobbyWatcher(db) {
+  const watcher = { count: -1 };
+  watcher.detach = watchLobbyCount((n) => { watcher.count = n; }, { database: db });
+  return watcher;
+}
+
+test('a room with nobody waiting has nothing to claim', async () => {
+  const db = createFakeDatabase();
+  const claimed = await claimWaitingRoom({ database: db });
+  assertEqual(claimed, null, 'an empty lobby returns nothing rather than hanging or throwing');
+});
+
+test('an advertised room can be claimed by someone else', async () => {
+  const db = createFakeDatabase();
+  const code = freshRoomCode();
+  const watcher = lobbyWatcher(db);
+  advertiseRoom(code, { clientId: 'adv1', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  const claimed = await claimWaitingRoom({ skipEntryId: 'other', database: db });
+  assertEqual(claimed, code, 'the claimer is told which room to join');
+});
+
+test('claiming removes the advertisement, so nobody else takes the same room', async () => {
+  const db = createFakeDatabase();
+  const watcher = lobbyWatcher(db);
+  advertiseRoom(freshRoomCode(), { clientId: 'adv1', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  const first = await claimWaitingRoom({ skipEntryId: 'x', database: db });
+  const second = await claimWaitingRoom({ skipEntryId: 'y', database: db });
+
+  assert(first !== null, 'the first claim succeeds');
+  assertEqual(second, null, 'and leaves nothing behind for the second');
+});
+
+/* The concurrency guarantee the transaction exists for, one level up from
+   claimSeat's: two searchers arriving at the same instant must not both
+   believe they got the same room, or they would join it as White's
+   opponent and a spectator.
+
+   Honest limitation, established by mutation-testing this: replacing the
+   transaction with a plain read-then-delete still passes. The fake's set()
+   and remove() write synchronously inside the caller's own callback, so a
+   read and its following write can never be interleaved by another client
+   the way a real network round trip allows. That makes read-then-write
+   effectively atomic here, and this test therefore documents intent rather
+   than proving the guarantee - as does the older seat-claim equivalent it
+   is modelled on. Proving it would mean making the fake's writes resolve
+   asynchronously, which is a change to every test in this file. The
+   transaction stays because it is what real Firebase requires; do not
+   "simplify" it on the strength of this test passing without one. */
+test('two searchers claiming at the same instant cannot get the same room', async () => {
+  const db = createFakeDatabase();
+  const code = freshRoomCode();
+  const watcher = lobbyWatcher(db);
+  advertiseRoom(code, { clientId: 'adv1', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  const [a, b] = await Promise.all([
+    claimWaitingRoom({ skipEntryId: 'x', database: db }),
+    claimWaitingRoom({ skipEntryId: 'y', database: db }),
+  ]);
+
+  const winners = [a, b].filter((room) => room !== null);
+  assertEqual(winners.length, 1, `exactly one searcher may win, got ${JSON.stringify([a, b])}`);
+  assertEqual(winners[0], code);
+});
+
+test('a searcher never claims its own advertisement', async () => {
+  const db = createFakeDatabase();
+  const watcher = lobbyWatcher(db);
+  advertiseRoom(freshRoomCode(), { clientId: 'mine', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  const claimed = await claimWaitingRoom({ skipEntryId: 'mine', database: db });
+  assertEqual(claimed, null, 'matching yourself would seat you in your own room as both players');
+});
+
+test('the longest-waiting room is matched first', async () => {
+  const db = createFakeDatabase();
+  const older = freshRoomCode();
+  const newer = freshRoomCode();
+
+  const watcher = lobbyWatcher(db);
+  db._serverTime = 1000;
+  advertiseRoom(older, { clientId: 'adv-old', database: db });
+  await waitFor(() => watcher.count === 1);
+  db._serverTime = 2000;
+  advertiseRoom(newer, { clientId: 'adv-new', database: db });
+  await waitFor(() => watcher.count === 2);
+
+  const claimed = await claimWaitingRoom({ skipEntryId: 'x', database: db });
+  assertEqual(claimed, older, 'whoever has waited longest is matched first, not whoever sorts earliest by id');
+});
+
+test('withdrawing an advertisement takes the room off the list', async () => {
+  const db = createFakeDatabase();
+  const watcher = lobbyWatcher(db);
+  const ad = advertiseRoom(freshRoomCode(), { clientId: 'adv1', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  ad.stop();
+  await waitFor(() => watcher.count === 0);
+
+  const claimed = await claimWaitingRoom({ skipEntryId: 'x', database: db });
+  assertEqual(claimed, null, 'a room that filled up or was left must not stay advertised');
+});
+
+test('a dropped connection takes the advertisement with it', async () => {
+  const db = createFakeDatabase();
+  const watcher = lobbyWatcher(db);
+  advertiseRoom(freshRoomCode(), { clientId: 'adv1', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  /* A closed tab, not a deliberate withdrawal - the same onDisconnect
+     idiom presence uses, for the same reason. */
+  db._simulateDisconnect(`${LOBBY_PATH}/adv1`);
+  await waitFor(() => watcher.count === 0);
+
+  const claimed = await claimWaitingRoom({ skipEntryId: 'x', database: db });
+  assertEqual(claimed, null, 'nobody should be sent to a room whose advertiser has vanished');
+});
+
+test('the waiting count excludes your own advertisement', async () => {
+  const db = createFakeDatabase();
+  let mine = -1;
+  let theirs = -1;
+  watchLobbyCount((n) => { mine = n; }, { skipEntryId: 'me', database: db });
+  watchLobbyCount((n) => { theirs = n; }, { skipEntryId: 'someone-else', database: db });
+
+  advertiseRoom(freshRoomCode(), { clientId: 'me', database: db });
+  await waitFor(() => theirs === 1);
+
+  assertEqual(mine, 0, 'the screen must be able to say "nobody else is looking" while you are the one waiting');
+  assertEqual(theirs, 1, 'while another client sees you');
 });
 
 /* ---- serializeState / deserializeState: Firebase's null-stripping ----

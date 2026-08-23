@@ -7,6 +7,24 @@
         ".read": true,
         ".write": true
       }
+    },
+    "lobby": {
+      "waiting": {
+        ".read": true,
+        "$entryId": {
+          ".write": true,
+          ".validate": "newData.hasChildren(['room', 'createdAt'])",
+          "room": {
+            ".validate": "newData.isString() && newData.val().length == 6"
+          },
+          "createdAt": {
+            ".validate": "newData.val() == now"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
     }
   }
 }

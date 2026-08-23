@@ -451,3 +451,142 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, recoveredC
     },
   };
 }
+
+/* ---- The lobby (stage 7b) ---------------------------------------------
+ *
+ * Two people who both press "play online" currently land in two different
+ * empty rooms and wait for each other forever - the codes are random, so
+ * they never meet. The lobby is what closes that.
+ *
+ * It advertises *rooms wanting a second player*, not players wanting
+ * games, which falls out of creating the room when someone starts
+ * searching rather than when they are matched. A searcher creates a room,
+ * takes White, and advertises it; a later searcher claims that
+ * advertisement and joins as Black. The advertiser needs no matchmaking
+ * logic at all - they are already listening to their own room, so the game
+ * begins the moment the second seat fills, whether that came from the
+ * queue or from a link they texted someone. One waiting state, two ways
+ * out of it.
+ *
+ * Unlike a room, /lobby is readable and writable by anyone: there are no
+ * accounts, and a queue nobody can read is not a queue. That is a real
+ * step out from this project's usual "you must already know the code"
+ * posture, and it is why database.rules.json validates the shape of an
+ * entry even though it cannot yet validate who wrote it. The blast radius
+ * is deliberately limited to this one node - rooms keep their own rules,
+ * so a lobby full of junk cannot touch a game in progress.
+ */
+
+const LOBBY_PATH = 'lobby/waiting';
+
+/* An entry is stale rather than wrong if the room it points at has since
+   filled up, or its advertiser vanished without cleaning up. Claiming is
+   therefore allowed to fail, and claimWaitingRoom simply moves on to the
+   next candidate. */
+function lobbyEntryRef(db, entryId) {
+  return db.ref(LOBBY_PATH + '/' + entryId);
+}
+
+/* Puts this room on the list, and takes it off again the moment the
+   connection drops - the same onDisconnect idiom presence uses, and for
+   the same reason: a closed tab must not leave a room advertised that
+   nobody is sitting in. Returns a handle whose stop() withdraws the
+   advertisement deliberately, for when the room fills or the player
+   leaves. */
+function advertiseRoom(roomCode, { clientId, database } = {}) {
+  const db = database || defaultDatabase();
+  const entryId = clientId || Math.random().toString(36).slice(2, 10);
+  const ref = lobbyEntryRef(db, entryId);
+  /* The entry is written only after the onDisconnect registration lands,
+     so that a connection dropping in between cannot strand it. That leaves
+     a window in which stop() may be called before the write happens - a
+     player who starts searching and immediately leaves - and without this
+     flag the withdrawal would be overtaken by its own advertisement, and
+     the room would stay listed with nobody in it. Found by the test for
+     withdrawal, not by reading the code. */
+  let stopped = false;
+
+  ref.onDisconnect().remove().then(() => {
+    if (stopped) {
+      return;
+    }
+    ref.set({ room: roomCode, createdAt: SERVER_TIMESTAMP });
+  });
+
+  return {
+    entryId,
+    stop() {
+      stopped = true;
+      ref.onDisconnect().cancel();
+      ref.remove();
+    },
+  };
+}
+
+/* Claims someone else's advertisement, or returns null when there is
+   nothing to claim.
+ *
+ * The claim is a transaction on the individual entry rather than a plain
+ * read-then-delete, because two searchers arriving at the same instant
+ * must not both believe they got it - the same race claimSeat solves
+ * inside a room, one level up. The loser of that race gets null back from
+ * its transaction and tries the next entry.
+ *
+ * `skipEntryId` is the caller's own advertisement, which it must not
+ * claim: a client that matched itself would sit in its own room as both
+ * players. */
+function claimWaitingRoom({ skipEntryId, database } = {}) {
+  const db = database || defaultDatabase();
+  const listRef = db.ref(LOBBY_PATH);
+
+  return listRef.once('value').then((snapshot) => {
+    const entries = snapshot.val() || {};
+    const candidates = Object.keys(entries).filter((id) => id !== skipEntryId);
+
+    /* Oldest first, so the person who has been waiting longest is matched
+       first rather than whoever happens to sort earliest by id. */
+    candidates.sort((a, b) => (entries[a].createdAt || 0) - (entries[b].createdAt || 0));
+
+    function tryNext(index) {
+      if (index >= candidates.length) {
+        return Promise.resolve(null);
+      }
+      const id = candidates[index];
+
+      /* The entry is captured inside the update function rather than read
+         from the result: Firebase resolves a transaction with the value it
+         *ended* at, which here is deletion, so the thing being claimed is
+         only visible from inside. Returning undefined aborts, which is how
+         "somebody beat me to this one" is expressed - the update function
+         may run more than once, but `claimed` is only ever read when the
+         attempt committed, so it holds that attempt's value. */
+      let claimed = null;
+      return lobbyEntryRef(db, id)
+        .transaction((current) => {
+          if (!current) {
+            return undefined;
+          }
+          claimed = current;
+          return null;
+        })
+        .then((result) => (result.committed && claimed ? claimed.room : tryNext(index + 1)));
+    }
+
+    return tryNext(0);
+  });
+}
+
+/* How many rooms are currently advertised, this client's own excluded.
+   Feeds the waiting screen, which says "nobody else is looking right now"
+   rather than spinning indefinitely: an empty queue should read as
+   information, not as a page that has frozen. Returns a detach function. */
+function watchLobbyCount(onCount, { skipEntryId, database } = {}) {
+  const db = database || defaultDatabase();
+  const listRef = db.ref(LOBBY_PATH);
+  const handler = (snapshot) => {
+    const entries = snapshot.val() || {};
+    onCount(Object.keys(entries).filter((id) => id !== skipEntryId).length);
+  };
+  listRef.on('value', handler);
+  return () => listRef.off('value', handler);
+}
