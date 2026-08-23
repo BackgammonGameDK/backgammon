@@ -1041,6 +1041,15 @@ function leaveStartScreen() {
    history entry for a screen the player is already looking at. */
 function exitToStartScreen() {
   if (onlineRoom) {
+    /* Asked before leaving, because leave() is what empties the room and
+       the answer stops being available the moment it has. Same predicate
+       sync.js uses to decide the deletion, so the offer and the record
+       cannot disagree - the alternative, waiting for the transaction to
+       report back, would have renderStartScreen below run first and
+       briefly offer a room that was already going. */
+    if (roomIsSpent(latestRoom, onlineColor)) {
+      forgetRoom(currentRoomCode);
+    }
     onlineRoom.leave({ departed: true });
     onlineRoom = null;
     onlineColor = null;

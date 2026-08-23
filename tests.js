@@ -1017,6 +1017,56 @@ function createFakeDatabase() {
     }
   }
 
+  /* Transactions outstanding right now, so that a write landing on an
+     overlapping path can cancel them the way a real one does.
+
+     Firebase aborts a pending transaction when *the same client* writes
+     over its path - an ancestor or a descendant counts - and surfaces it
+     as an error whose entire message is the name of the offending
+     operation, which is as cryptic as it sounds. The fake had no notion of
+     this, so sync.js's room cleanup passed every test here while failing
+     every time against the live database: leave() removed the presence
+     entry alongside a transaction on the room above it, and the
+     transaction died on the spot. Modelled for the same reason the
+     null-stripping and the key ordering are - a fake that only does what
+     you would naively expect lets exactly this ship.
+
+     Off by default, and that is the honest setting rather than a shortcut.
+     "The same client" is the load-bearing half: a write from *another*
+     client does not abort anything, it just makes the transaction re-run
+     against the new value, which is the entire retry mechanism seat
+     claiming depends on. This fake has no notion of separate connections -
+     one store, one set of refs, every test client sharing them - so it
+     cannot tell the two apart, and switching this on globally would make
+     one device's presence write cancel another's seat claim, which real
+     Firebase never does. Tests that exercise a single client turn it on
+     with db._oneConnection = true; tests that stand two devices up against
+     each other leave it off. */
+  const pendingTransactions = [];
+
+  function overlaps(a, b) {
+    const x = segments(a);
+    const y = segments(b);
+    const shared = Math.min(x.length, y.length);
+    for (let i = 0; i < shared; i++) {
+      if (x[i] !== y[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function cancelTransactionsTouching(path, operation) {
+    if (!db._oneConnection) {
+      return;
+    }
+    pendingTransactions.forEach((entry) => {
+      if (overlaps(entry.path, path)) {
+        entry.cancelledBy = operation;
+      }
+    });
+  }
+
   /* Fires every listener on `path` itself and on every ancestor of it -
      each gets the current value at *its own* path, not at the path that
      actually changed, same as a real Firebase 'value' listener. */
@@ -1042,6 +1092,10 @@ function createFakeDatabase() {
 
   const db = {
     _serverTime: null,
+    /* See pendingTransactions above: opt in when a test is one client, so
+       that an overlapping write cancels its own transaction the way the
+       real SDK does. */
+    _oneConnection: false,
     ref(path) {
       return {
         /* An update function returning undefined aborts the transaction,
@@ -1051,8 +1105,15 @@ function createFakeDatabase() {
            committed regardless, so a losing racer would have looked like
            a winner. */
         transaction(updateFn) {
-          return new Promise((resolve) => {
+          const entry = { path, cancelledBy: null };
+          pendingTransactions.push(entry);
+          return new Promise((resolve, reject) => {
             setTimeout(() => {
+              pendingTransactions.splice(pendingTransactions.indexOf(entry), 1);
+              if (entry.cancelledBy) {
+                reject(new Error(entry.cancelledBy));
+                return;
+              }
               const current = getNode(path) ?? null;
 
               /* Real Firebase runs the update function optimistically
@@ -1127,6 +1188,7 @@ function createFakeDatabase() {
           }
         },
         set(value) {
+          cancelTransactionsTouching(path, 'set');
           writeNode(path, value);
           notify(path);
           return Promise.resolve();
@@ -1136,6 +1198,7 @@ function createFakeDatabase() {
            different client) untouched - unlike set(), which would replace
            the whole node. */
         update(patch) {
+          cancelTransactionsTouching(path, 'update');
           Object.keys(patch).forEach((key) => {
             writeNode(path + '/' + key, patch[key]);
           });
@@ -1143,6 +1206,7 @@ function createFakeDatabase() {
           return Promise.resolve();
         },
         remove() {
+          cancelTransactionsTouching(path, 'remove');
           writeNode(path, undefined);
           notify(path);
           return Promise.resolve();
@@ -1173,6 +1237,17 @@ function createFakeDatabase() {
         },
       };
     },
+    /* Test-only: what the database holds at `path` right now, without
+       going through a listener. Returns null for a path that is absent,
+       matching what a real read gives back - which is what the room
+       cleanup tests assert on, since "the record is gone" is not
+       something any listener reports (sync.js's own handler ignores a
+       null snapshot rather than passing it on). */
+    _read(path) {
+      const value = getNode(path);
+      return value === undefined ? null : value;
+    },
+
     /* Test-only: runs whatever onDisconnect() action is registered at
        `path`, standing in for the real Firebase server noticing this
        client's connection drop. */
@@ -2080,6 +2155,139 @@ test('half a finished opening round survives a round trip', async () => {
    a restart, and was then refused by the monotonic checks for sending
    every checker back to the start. Both players sat looking at a finished
    game that would not clear. */
+/* ---- rooms that clean up after themselves ------------------------------
+ *
+ * Nothing else deletes rooms - there is no listing and no client has any
+ * business removing somebody else's game - so the two cases below are the
+ * whole of it, and the point of the tests is as much what is *not* deleted
+ * as what is. The lobby made this worth doing: it creates a room every
+ * time somebody starts searching rather than every time a game happens.
+ */
+
+function finishedGame() {
+  const state = createInitialState();
+  state.phase = 'playing';
+  state.openingRoll = null;
+  state.currentPlayer = 'black';
+  state.winner = 'black';
+  state.points = new Array(25).fill(null);
+  state.points[3] = { color: 'white', count: 15 };
+  state.off = { white: 0, black: 15 };
+  return state;
+}
+
+test('roomIsSpent: a room nobody ever joined is spent, a shared one is not', () => {
+  const alone = { seats: { white: 'c1' } };
+  const both = { seats: { white: 'c1', black: 'c2' } };
+
+  assert(roomIsSpent(alone, 'white'), 'an advertisement nobody answered holds nothing');
+  assert(!roomIsSpent(both, 'white'), 'two seats means White has seeded a board, or is about to');
+  assert(!roomIsSpent(alone, 'spectator'), 'a spectator deletes nothing, ever');
+});
+
+test('roomIsSpent: a finished game goes only once both players have left', () => {
+  const room = { seats: { white: 'c1', black: 'c2' }, state: finishedGame() };
+
+  assert(!roomIsSpent(room, 'white'), 'one player leaving is not both');
+  assert(roomIsSpent({ ...room, departed: { black: true } }, 'white'),
+    'the second to leave is the one who empties it');
+  assert(!roomIsSpent({ ...room, state: playingState(), departed: { black: true } }, 'white'),
+    'a game still in progress survives both players walking away from it');
+});
+
+test('a searcher who gives up takes their empty room with them', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  /* One client, so its own writes can cancel its own transaction - which
+     is exactly the trap leave() has to avoid. See _oneConnection. */
+  db._oneConnection = true;
+  let room = null;
+  const a = joinRoom(code, { onRoom: (r) => { room = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => room !== null);
+
+  a.leave({ departed: true });
+  await waitFor(() => db._read('rooms/' + code) === null);
+  assertEqual(db._read('rooms/' + code), null, 'nobody ever arrived, so there is nothing to come back to');
+});
+
+test('a room an opponent has reached is left alone', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let seen = null;
+  const a = joinRoom(code, { onRoom: (r) => { seen = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => seen !== null);
+  joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => seen.seats && seen.seats.black === 'c2');
+
+  a.leave({ departed: true });
+  await waitFor(() => db._read('rooms/' + code + '/departed/white') === true);
+  assert(db._read('rooms/' + code) !== null, 'the other player is still in there');
+  assertEqual(db._read('rooms/' + code + '/seats/white'), 'c1',
+    'and the seat is kept, so leaving stays undoable');
+});
+
+test('a finished game is removed by whichever player leaves second', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let seen = null;
+  const a = joinRoom(code, { onRoom: (r) => { seen = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => seen !== null);
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => seen.seats && seen.seats.black === 'c2');
+
+  a.sendState(finishedGame());
+  await waitFor(() => seen.state && seen.state.winner === 'black');
+
+  a.leave({ departed: true });
+  await waitFor(() => db._read('rooms/' + code + '/departed/white') === true);
+  assert(db._read('rooms/' + code) !== null, 'one of them may still be looking at the final board');
+
+  b.leave({ departed: true });
+  await waitFor(() => db._read('rooms/' + code) === null);
+  assertEqual(db._read('rooms/' + code), null, 'once neither of them is there, the record is finished with');
+});
+
+test('a game still in progress survives both players leaving', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let seen = null;
+  const a = joinRoom(code, { onRoom: (r) => { seen = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => seen !== null);
+  const b = joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => seen.seats && seen.seats.black === 'c2');
+
+  a.sendState(playingState());
+  await waitFor(() => seen.state && seen.state.phase === 'playing');
+
+  a.leave({ departed: true });
+  b.leave({ departed: true });
+  await waitFor(() => db._read('rooms/' + code + '/departed/black') === true);
+
+  assert(db._read('rooms/' + code) !== null,
+    'an unfinished game is exactly what Rejoin exists to get you back into');
+});
+
+test('a spectator leaving removes nothing', async () => {
+  const code = freshRoomCode();
+  const db = createFakeDatabase();
+  let seen = null;
+  joinRoom(code, { onRoom: (r) => { seen = r; } }, { clientId: 'c1', database: db });
+  await waitFor(() => seen !== null);
+  joinRoom(code, { onRoom: () => {} }, { clientId: 'c2', database: db });
+  await waitFor(() => seen.seats && seen.seats.black === 'c2');
+
+  let watcherColor = null;
+  const watcher = joinRoom(code, { onRoom: (r, c) => { watcherColor = c; } }, { clientId: 'c3', database: db });
+  await waitFor(() => watcherColor !== null);
+  assertEqual(watcherColor, 'spectator');
+
+  watcher.leave({ departed: true });
+  await waitFor(() => true);
+  assert(db._read('rooms/' + code) !== null, 'a watcher walking out ends nobody\'s game');
+  assertEqual(db._read('rooms/' + code + '/departed'), null,
+    'and announces a departure nobody was waiting on');
+});
+
 test('a restart is still recognised as one after a round trip', async () => {
   const code = freshRoomCode();
   const db = createFakeDatabase();
