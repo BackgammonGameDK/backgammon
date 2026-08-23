@@ -520,6 +520,36 @@ test('a restart is accepted from anywhere', () => {
   assert(isLegalSuccessor(midGame, createInitialState(), []), 'either player may restart at any time');
 });
 
+/* The rule the rejoin fix in script.js rests on. A client that has just
+   joined has no state from this room to judge the arriving one against -
+   what is on screen is the pre-game backdrop - so handleRoomUpdate passes
+   null and lets structural validity be the whole bar. Judging against the
+   backdrop instead is what wedged a real game that both players rejoined:
+   by the backdrop's reckoning the opponent had gained ground on a turn
+   that was not theirs, so the true board was refused by both sides. */
+test('a game in progress is accepted on joining, having nothing to be a step from', () => {
+  /* Both sides have played, which is what a rejoining client actually
+     finds and what the backdrop cannot account for: the backdrop says it
+     is white's turn, so black having advanced 1 -> 3 reads as the idle
+     player gaining ground. */
+  const midGame = playingState((s) => {
+    s.points[6] = { color: 'white', count: 6 };
+    s.points[8] = { color: 'white', count: 2 };
+    s.points[1] = { color: 'black', count: 1 };
+    s.points[3] = { color: 'black', count: 1 };
+  });
+  const backdrop = createInitialState();
+
+  assert(isStructurallyValid(midGame), 'the board itself is a possible one');
+  assert(pipCount(midGame, 'black') < pipCount(backdrop, 'black'), 'black has gained ground');
+  assert(!isLegalSuccessor(backdrop, midGame, []),
+    'so it is not a legal step from the backdrop a joining client is showing');
+  assert(isLegalSuccessor(null, midGame, []),
+    'but with no predecessor there is nothing to contradict, so it stands');
+  assert(!isLegalSuccessor(null, playingState((s) => { s.bar.white = 3; }), []),
+    'structural validity is still the bar - eighteen white checkers is refused');
+});
+
 test('an unchanged state is accepted, since Firebase echoes your own writes back', () => {
   const state = playingState();
   assert(isLegalSuccessor(state, state, []), 'a client must accept the return of its own broadcast');
