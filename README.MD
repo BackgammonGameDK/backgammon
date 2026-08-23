@@ -383,12 +383,19 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
 
 8. Further ideas noted once the onboarding work (item 5) was finished and the
    game had been played through properly. Independent of each other.
-   - **Confirm before Restart — arguably a defect, not a feature.** One tap
-     wipes the game for *both* players, either player can do it at any time,
-     and nothing asks. On a phone that is one mis-tap from destroying a game
-     in progress, and it got riskier when Exit was added beside it: Exit is
-     recoverable (the start screen offers the room back, see 5d) but Restart
-     is not. A confirmation step, or an undo window, on Restart specifically.
+   - ~~**Confirm before Restart — arguably a defect, not a feature.**~~
+     ✅ Done. A mid-game Restart now arms on the first press and acts on the
+     second, showing "Restart?" in amber. It disarms after four seconds, and
+     also on any state change at all — the confirmation was armed over a
+     particular board, and if that board has moved on the second tap would
+     be answering a question nobody is asking. A finished game, or one still
+     deciding who starts, restarts on the first press; Play Again on the win
+     overlay never asks, a new game being the whole point of that button.
+
+     Not solved: **the other player still gets no say.** One player's
+     confirmed Restart ends the other's game without warning. A restart
+     *request* that the opponent accepts is a larger feature; this stops the
+     accident, not the disagreement.
    - **A connection indicator.** If a phone loses signal mid-game nothing
      says so — moves simply fail to broadcast, silently. `sync.js` already
      watches `.info/connected` for presence, so surfacing "offline —
@@ -538,6 +545,8 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+Restart now asks twice. It wipes a game in progress for both players, either of them can press it at any time, and unlike Exit it cannot be undone — the start screen can offer a room back, but not a board. Mid-game it arms on the first press and acts on the second, disarming after four seconds or on any state change, since a confirmation armed over one board should not still be live over a different one. A finished game restarts on the first press, and Play Again never asks at all. What this fixes is the mis-tap; it does not give the other player a say, which would need a restart request they accept.
 
 Rooms now record a `lastActive` timestamp on every broadcast, so a stale one can be told from a live one. It uses Firebase's server clock rather than the device's, since a phone with the wrong time would otherwise make a dead room look fresh; and nothing writes it on join, so a room whose second player never showed up has no timestamp at all — which says "never played" rather than "played and went quiet". Deleting rooms is still not possible from the client, and deliberately so: the database rules grant access only to a room whose code you already know, so cleanup remains a console job until there is a scheduled one.
 

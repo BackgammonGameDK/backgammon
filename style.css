@@ -581,6 +581,13 @@ body {
   cursor: pointer;
 }
 
+/* Armed and awaiting a second press. Amber rather than red: this is a
+   question, not an error, and red is not used anywhere else in the app. */
+#restart-button.armed {
+  color: #e0a030;
+  border-color: #e0a030;
+}
+
 #restart-button:hover,
 #exit-button:hover {
   background: #3a3a3a;
