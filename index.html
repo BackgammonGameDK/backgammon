@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=46">
+  <link rel="stylesheet" href="style.css?v=47">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -127,7 +127,10 @@
            among the online options because a returning player is exactly
            who needs it - a first-time visitor never sees it at all. -->
       <button id="rejoin-button" class="start-primary" hidden>Rejoin room <span id="rejoin-code"></span></button>
-      <button id="play-online-button" class="start-primary">Start an online game</button>
+      <!-- "Find" rather than "Start": pressing it now looks for someone
+           already waiting before starting a room, so two people pressing
+           it meet instead of landing in two empty rooms. -->
+      <button id="play-online-button" class="start-primary">Find an opponent</button>
       <div id="start-join-label">Got a room code from a friend?</div>
       <div id="join-area">
         <input id="room-code-input" type="text" maxlength="6" placeholder="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false">
@@ -147,10 +150,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=46"></script>
-  <script src="qrcode-generator.js?v=46"></script>
-  <script src="rules.js?v=46"></script>
-  <script src="sync.js?v=46"></script>
-  <script src="script.js?v=46"></script>
+  <script src="firebase-config.js?v=47"></script>
+  <script src="qrcode-generator.js?v=47"></script>
+  <script src="rules.js?v=47"></script>
+  <script src="sync.js?v=47"></script>
+  <script src="script.js?v=47"></script>
 </body>
 </html>

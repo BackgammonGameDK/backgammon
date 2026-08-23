@@ -888,6 +888,22 @@ hintsToggle.addEventListener('change', () => {
  * client gets there first (handleRoomUpdate), once both seats are filled.
  */
 
+/* Withdraws this client's advertisement and stops counting. Called when an
+   opponent arrives - from the queue or from an invite link, which are
+   indistinguishable by the time the second seat is claimed - and when the
+   player leaves. Safe to call when there is nothing to withdraw. */
+function stopSearching() {
+  if (lobbyAdvertisement) {
+    lobbyAdvertisement.stop();
+    lobbyAdvertisement = null;
+  }
+  if (lobbyCountDetach) {
+    lobbyCountDetach();
+    lobbyCountDetach = null;
+  }
+  othersSearching = 0;
+}
+
 function leaveStartScreen() {
   startScreenEl.hidden = true;
   gameStarted = true;
@@ -921,6 +937,7 @@ function exitToStartScreen() {
     qrPanelEl.hidden = true;
     document.body.classList.remove('online');
   }
+  stopSearching();
 
   /* Back to White's view - whatever comes next (a hot-seat game, or a room
      where this client is White) is drawn that way until a seat says
@@ -1000,6 +1017,16 @@ let latestRoom = null;
    only when that stops matching currentRoomCode, rather than on every
    toggle-open. */
 let qrRenderedForRoom = null;
+/* This client's lobby advertisement while it waits to be claimed, and the
+   detach for the live count of other people searching. Both are cleared
+   the moment an opponent arrives, by whichever route. */
+let lobbyAdvertisement = null;
+let lobbyCountDetach = null;
+let othersSearching = 0;
+/* Set while joining a room the lobby handed us, so that landing as a
+   spectator can be recognised as a stale advertisement rather than a
+   deliberate spectate - see handleRoomUpdate. */
+let joinedFromLobby = false;
 
 /* The gate for "is this tab allowed to act right now": a spectator never
    is; neither is a seated player before the other seat has ever been
@@ -1081,7 +1108,14 @@ function renderRoomStatus(room) {
   let status = '';
   if (onlineColor !== 'spectator') {
     if (!seatTaken) {
-      status = ' — waiting for opponent…';
+      /* An empty queue has to read as information rather than as a page
+         that has frozen - "nobody else is looking" tells you to send the
+         link, which is right there beside this text. */
+      status = lobbyAdvertisement
+        ? othersSearching === 0
+          ? ' — waiting; nobody else is searching'
+          : ` — waiting; ${othersSearching} other${othersSearching === 1 ? '' : 's'} searching`
+        : ' — waiting for opponent…';
     } else if (otherDeparted) {
       /* Checked before presence: leaving clears presence too, so an
          opponent who quit satisfies both conditions and the more
@@ -1102,6 +1136,13 @@ function renderRoomStatus(room) {
   roomChipEl.hidden = !collapsed;
   roomChipEl.textContent = currentRoomCode;
   roomDetailsEl.hidden = collapsed && !roomDetailsOpen;
+
+  /* An opponent has arrived, so the room must come off the list before
+     anyone else is sent to it. Whether they came from the queue or from an
+     invite link is not knowable here, and does not matter. */
+  if (bothSeatsClaimed(room)) {
+    stopSearching();
+  }
 
   const restartBlocked = onlineColor === 'spectator' || !bothSeatsClaimed(room);
   restartButton.disabled = restartBlocked;
@@ -1125,6 +1166,19 @@ function renderRoomStatus(room) {
    receives back, so a freshly-created room's `state` arrives as undefined,
    not null. `== null` matches both. */
 function handleRoomUpdate(room, color) {
+  /* The lobby sent us to a room that had filled up in the meantime - its
+     advertisement was stale. Landing as a spectator here is not a choice
+     the player made, so back out and start a room of our own instead of
+     stranding them watching strangers. Entries are withdrawn when a room
+     fills and on disconnect, so this is rare rather than routine. */
+  if (joinedFromLobby && color === 'spectator') {
+    joinedFromLobby = false;
+    exitToStartScreen();
+    showStartError('That game had just filled up — try again.');
+    return;
+  }
+  joinedFromLobby = false;
+
   onlineColor = color;
   latestRoom = room;
   setBoardPerspective(color);
@@ -1154,10 +1208,42 @@ function startOnline(roomCode) {
   onlineRoom = joinRoom(roomCode, { onRoom: handleRoomUpdate });
 }
 
+/* Two people who both pressed this used to land in two different empty
+   rooms and wait for each other forever, the codes being random. Now it
+   asks the lobby first: join whoever is already waiting, or start a room
+   and wait to be joined - by a searcher or by a friend you send the link
+   to, whichever arrives first. */
 playOnlineButton.addEventListener('click', () => {
-  const roomCode = randomRoomCode();
-  location.hash = `room=${roomCode}`;
-  startOnline(roomCode);
+  playOnlineButton.disabled = true;
+  findOrStartRoom({ clientId: lobbyClientId() })
+    .then(({ roomCode, advertisement }) => {
+      lobbyAdvertisement = advertisement;
+      joinedFromLobby = advertisement === null;
+      if (advertisement) {
+        lobbyCountDetach = watchLobbyCount(
+          (n) => {
+            othersSearching = n;
+            if (onlineRoom) {
+              renderRoomStatus(latestRoom || { seats: {} });
+            }
+          },
+          { skipEntryId: advertisement.entryId }
+        );
+      }
+      location.hash = `room=${roomCode}`;
+      startOnline(roomCode);
+    })
+    .catch(() => {
+      /* The lobby is unreachable - most likely its rules have not been
+         deployed. Falling back to a plain room keeps the button working as
+         it always did, rather than leaving the player with a dead press. */
+      const roomCode = randomRoomCode();
+      location.hash = `room=${roomCode}`;
+      startOnline(roomCode);
+    })
+    .then(() => {
+      playOnlineButton.disabled = false;
+    });
 });
 
 /* Beyond pasting a full invite link (still fully supported - see the

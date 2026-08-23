@@ -478,6 +478,26 @@ function joinRoom(roomCode, { onRoom }, { clientId: clientIdOverride, recoveredC
  */
 
 const LOBBY_PATH = 'lobby/waiting';
+const LOBBY_CLIENT_KEY = 'bg:lobby-client';
+
+/* A stable id for this tab's lobby entry. Per-tab like a seat identity and
+   for the same reason - two tabs of one browser must be able to search
+   independently - but not per-room, since a searcher has no room yet.
+   Guarded the way lastRoomCode is: this runs on a button press rather than
+   only when joining, and losing the ability to search is a better failure
+   than throwing. */
+function lobbyClientId() {
+  try {
+    let id = sessionStorage.getItem(LOBBY_CLIENT_KEY);
+    if (!id) {
+      id = Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem(LOBBY_CLIENT_KEY, id);
+    }
+    return id;
+  } catch (error) {
+    return Math.random().toString(36).slice(2, 10);
+  }
+}
 
 /* An entry is stale rather than wrong if the room it points at has since
    filled up, or its advertiser vanished without cleaning up. Claiming is
@@ -556,17 +576,28 @@ function claimWaitingRoom({ skipEntryId, database } = {}) {
       /* The entry is captured inside the update function rather than read
          from the result: Firebase resolves a transaction with the value it
          *ended* at, which here is deletion, so the thing being claimed is
-         only visible from inside. Returning undefined aborts, which is how
-         "somebody beat me to this one" is expressed - the update function
-         may run more than once, but `claimed` is only ever read when the
-         attempt committed, so it holds that attempt's value. */
+         only visible from inside.
+
+         Note what this must NOT do: abort by returning undefined when
+         `current` is null. Firebase runs the update function optimistically
+         against whatever it has cached - usually nothing - *before* it has
+         the server's value, so a null first invocation means "not fetched
+         yet", not "already taken". Aborting there kills the transaction
+         before it ever reaches the server, and claiming silently never
+         works. Deleting unconditionally is correct instead: if the server
+         disagrees, Firebase re-runs the function with the real value and
+         `claimed` is set on that pass; if the entry really was gone,
+         `claimed` stays null and the caller moves to the next candidate.
+
+         This cost a live debugging session. It cannot reproduce against a
+         fake that hands over the true value on the first call, which is why
+         createFakeDatabase now simulates the optimistic null pass too. */
       let claimed = null;
       return lobbyEntryRef(db, id)
         .transaction((current) => {
-          if (!current) {
-            return undefined;
+          if (current) {
+            claimed = current;
           }
-          claimed = current;
           return null;
         })
         .then((result) => (result.committed && claimed ? claimed.room : tryNext(index + 1)));
@@ -589,4 +620,24 @@ function watchLobbyCount(onCount, { skipEntryId, database } = {}) {
   };
   listRef.on('value', handler);
   return () => listRef.off('value', handler);
+}
+
+/* The whole matchmaking decision, in one call: claim somebody else's
+   waiting room, or start one and wait to be claimed.
+ *
+ * Returns { roomCode, advertisement }. `advertisement` is null when you
+ * claimed an existing room - there is nothing to advertise, because the
+ * room you just joined is about to be full - and otherwise the handle
+ * whose stop() withdraws yours once someone arrives or you leave.
+ *
+ * Kept here rather than in script.js so the round trip that matters - two
+ * searchers ending up in the same room - is provable without a browser. */
+function findOrStartRoom({ clientId, database } = {}) {
+  return claimWaitingRoom({ skipEntryId: clientId, database }).then((claimed) => {
+    if (claimed) {
+      return { roomCode: claimed, advertisement: null };
+    }
+    const roomCode = randomRoomCode();
+    return { roomCode, advertisement: advertiseRoom(roomCode, { clientId, database }) };
+  });
 }

@@ -609,6 +609,29 @@ function createFakeDatabase() {
           return new Promise((resolve) => {
             setTimeout(() => {
               const current = getNode(path) ?? null;
+
+              /* Real Firebase runs the update function optimistically
+                 against its local cache - usually empty - before it has the
+                 server's value, and only then re-runs it with the truth.
+                 A fake that hands over the real value on the first call
+                 lets code pass here that cannot work against the live
+                 database: a claim that aborted on a null first invocation
+                 did exactly that, and took a live debugging session to
+                 find. So the null pass is simulated whenever there is
+                 actually something there, and its result discarded. */
+              if (current !== null) {
+                const optimistic = updateFn(null);
+                /* An abort on the optimistic pass ends the transaction
+                   there and then - Firebase does not go on to try the real
+                   value. That is the whole trap: code which treats a null
+                   first invocation as "already taken" never reaches the
+                   server at all. */
+                if (optimistic === undefined) {
+                  resolve({ committed: false, snapshot: { val: () => current } });
+                  return;
+                }
+              }
+
               const next = updateFn(current);
               if (next === undefined) {
                 resolve({ committed: false, snapshot: { val: () => current } });
@@ -1476,6 +1499,48 @@ test('the waiting count excludes your own advertisement', async () => {
 
   assertEqual(mine, 0, 'the screen must be able to say "nobody else is looking" while you are the one waiting');
   assertEqual(theirs, 1, 'while another client sees you');
+});
+
+test('the first searcher starts a room and advertises it', async () => {
+  const db = createFakeDatabase();
+  const watcher = lobbyWatcher(db);
+
+  const first = await findOrStartRoom({ clientId: 'p1', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  assert(/^[A-Z0-9]{6}$/.test(first.roomCode), `a fresh room code, got ${first.roomCode}`);
+  assert(first.advertisement !== null, 'and it is on the list, waiting to be claimed');
+});
+
+/* The feature, in one assertion: two people who each press "play online"
+   end up in the same room instead of two empty ones. */
+test('the second searcher lands in the first one\'s room', async () => {
+  const db = createFakeDatabase();
+  const watcher = lobbyWatcher(db);
+
+  const first = await findOrStartRoom({ clientId: 'p1', database: db });
+  await waitFor(() => watcher.count === 1);
+
+  const second = await findOrStartRoom({ clientId: 'p2', database: db });
+
+  assertEqual(second.roomCode, first.roomCode, 'both searchers must arrive at the same room');
+  assertEqual(second.advertisement, null, 'and the claimer advertises nothing - the room it just joined is about to be full');
+  await waitFor(() => watcher.count === 0, 800);
+});
+
+test('a third searcher, with the first two paired off, starts its own room', async () => {
+  const db = createFakeDatabase();
+  const watcher = lobbyWatcher(db);
+
+  const first = await findOrStartRoom({ clientId: 'p1', database: db });
+  await waitFor(() => watcher.count === 1);
+  await findOrStartRoom({ clientId: 'p2', database: db });
+  await waitFor(() => watcher.count === 0, 800);
+
+  const third = await findOrStartRoom({ clientId: 'p3', database: db });
+
+  assert(third.roomCode !== first.roomCode, 'it must not be sent into a room that already has two players');
+  assert(third.advertisement !== null, 'it waits, in turn');
 });
 
 /* ---- serializeState / deserializeState: Firebase's null-stripping ----

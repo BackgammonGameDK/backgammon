@@ -1178,13 +1178,17 @@ button,
        the 36px .status-row top clearance below (also measured, not
        guessed) that keeps the turn indicator's text out from under the
        fixed Restart button once the h1 is hidden. */
-    --chrome: 264px;
-    /* 268 - 217, larger than the desktop 38px because #room-status wraps
-       onto a second line once it's this narrow. A portrait phone is
-       width-bound rather than height-bound, so this changes nothing
-       there; it's the short-but-wide window this breakpoint also covers
-       that actually spends it. */
-    --online-row: 51px;
+    /* Re-measured when the lobby's waiting text ("— waiting; nobody else
+       is searching", the longest this line ever gets) pushed #room-status
+       2px taller at this width. Both numbers move together, so a hot-seat
+       board is unchanged: it spends chrome minus online-row either way. */
+    --chrome: 266px;
+    /* 45px of row plus the dice area's 8px gap. Larger than the desktop
+       38px because #room-status wraps onto a second line once it's this
+       narrow. A portrait phone is width-bound rather than height-bound,
+       so this changes nothing there; it's the short-but-wide window this
+       breakpoint also covers that actually spends it. */
+    --online-row: 53px;
     --board-border: 5px;
     --point-pad: 3px;
     /* Wider than on desktop so a checker on the bar stays the same size as

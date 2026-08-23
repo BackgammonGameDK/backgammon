@@ -138,6 +138,22 @@ Two deliberate omissions, both worth knowing before "improving" this:
 
 Its real limit: a mobile browser that discards a backgrounded tab stops running the page at all, so no title update happens either. This helps while you're briefly in another app, not when you return the next day — that case is what seat recovery in `sync.js` is for.
 
+### The lobby (`sync.js`'s lobby section, `findOrStartRoom`)
+
+Two people who both pressed "play online" used to land in two different empty rooms and wait for each other forever — the codes are random, so they never met. The lobby closes that.
+
+**It advertises rooms wanting a second player, not players wanting games.** That falls out of creating the room when someone starts *searching* rather than when they are matched. A searcher creates a room, takes White and advertises it; a later searcher claims that advertisement and joins as Black. **The advertiser needs no matchmaking logic at all** — it is already listening to its own room, so the game begins the moment the second seat fills, whether that came from the queue or from a link the player texted someone. One waiting state, two ways out of it.
+
+`findOrStartRoom` is the whole decision in one call, and lives in `sync.js` rather than `script.js` so the round trip that matters — two searchers reaching the same room — is provable without a browser.
+
+**The transaction trap, which cost a live debugging session.** Claiming deletes an entry through a transaction, and the update function must **never abort by returning `undefined` when `current` is null**. Firebase runs that function optimistically against its local cache — usually empty — *before* it has the server's value, so a null first invocation means "not fetched yet", not "already taken". Aborting there kills the transaction before it reaches the server and claiming silently never works. Deleting unconditionally is correct: if the server disagrees Firebase re-runs with the real value, and the closure variable is set on that pass. **This cannot reproduce against a fake that hands over the true value on the first call**, which is why `createFakeDatabase` now simulates the optimistic null pass and honours an abort during it.
+
+Entries are matched **oldest first**, so the longest wait is served rather than whoever sorts earliest by id; a client never claims its own advertisement (that would seat it in its own room as both players); and `advertiseRoom` writes its entry only after the `onDisconnect` registration lands, with a `stopped` flag so a withdrawal in that window is not overtaken by its own advertisement.
+
+**An entry can still be stale** — the room it points at may have filled from an invite link in the meantime. The claimer then lands as a spectator, which is not a choice the player made, so `handleRoomUpdate` recognises that (`joinedFromLobby`) and backs out to the start screen with "That game had just filled up — try again" rather than stranding them watching strangers.
+
+**Security.** `/lobby/waiting` is readable and writable by anyone: there are no accounts, and a queue nobody can read is not a queue. That is a real step out from this project's "you must already know the code" posture, and it is why `database.rules.json` validates the *shape* of an entry — a six-character room code, a server-set `createdAt`, and nothing else — even though it cannot yet validate who wrote it. The blast radius is deliberately this one node; rooms keep their own rules, so a lobby full of junk cannot touch a game in progress. **Rules are not served by GitHub Pages** — they are deployed separately with `firebase deploy --only database`, and until that runs every lobby call fails with permission denied.
+
 ### Board perspective (`setBoardPerspective`)
 
 Backgammon is played across a board: the player sitting opposite sees their own home board bottom-right and moves toward it. White gets that view by default from the fixed markup, so **an online client seated as Black gets `.black-perspective` on `.board`**, which swaps the two rows. That alone produces the whole mirror — Black's home (19-24) lands bottom-right, their bear-off tray beside it, their bar in the row they re-enter into, and point 1, where their back checkers start, top-right. Horizontal order inside each quadrant is already correct and must not change.
