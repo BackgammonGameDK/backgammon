@@ -33,7 +33,6 @@ const startScreenEl = document.querySelector('#start-screen');
 const startHotseatButton = document.querySelector('#start-hotseat-button');
 const startErrorEl = document.querySelector('#start-error');
 const rejoinButton = document.querySelector('#rejoin-button');
-const rejoinCodeEl = document.querySelector('#rejoin-code');
 const roomCodeInput = document.querySelector('#room-code-input');
 const joinRoomButton = document.querySelector('#join-room-button');
 const roomStatusEl = document.querySelector('#room-status');
@@ -1099,9 +1098,7 @@ exitButton.addEventListener('click', exitToStartScreen);
    shown rather than once at load, so the code just left behind by Exit is
    the one offered - a mis-tapped Exit is one tap from being undone. */
 function renderStartScreen() {
-  const code = lastRoomCode();
-  rejoinButton.hidden = !code;
-  rejoinCodeEl.textContent = code || '';
+  rejoinButton.hidden = !lastRoomCode();
 }
 
 rejoinButton.addEventListener('click', () => {
@@ -1268,7 +1265,13 @@ function renderRoomStatus(room) {
       status = ' — opponent disconnected';
     }
   }
-  roomInfoEl.textContent = `Room ${currentRoomCode} · ${you}${status}`;
+  /* No room code here on purpose. It is the one piece of this line that
+     nobody who came in through Find an opponent ever needs: it is in the
+     address bar, and both ways of handing it to somebody (Copy link, QR)
+     carry it without anyone having to read it off the screen. What is
+     left is only what the player can act on - who they are, and what the
+     game is waiting for. */
+  roomInfoEl.textContent = `${you}${status}`;
   roomStatusEl.classList.toggle('room-status--warning', otherDeparted || (seatTaken && !otherPresent));
 
   /* The row earns its space only while it has something to say. During an
