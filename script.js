@@ -1605,11 +1605,51 @@ qrToggleButton.addEventListener('click', () => {
 /* Pasting a full invite link (e.g. .../index.html#room=ABCDEF) straight
    into the address bar still works exactly as before - join-by-code and
    the QR code above are additional ways in, not replacements for this. */
+function roomCodeInUrl() {
+  const match = location.hash.match(/room=([A-Z0-9]{6})/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+/* The read below happens once, at load, which covers a link that opens a
+   page - a message-app tap, a QR scan, a fresh tab. It does not cover the
+   same link pasted into the address bar of a tab that is *already* on the
+   game: only the fragment changes, so the browser performs a same-document
+   navigation, the scripts never re-run, and before this listener nothing
+   whatsoever happened. The page just sat there, which is indistinguishable
+   from a broken link. The Back button after joining a room was the same
+   gap from the other direction, since joining pushes a history entry by
+   assigning location.hash.
+
+   This client's own hash writes arrive here too - which is why the first
+   thing it does is ignore a code it is already in. */
+window.addEventListener('hashchange', () => {
+  const code = roomCodeInUrl();
+  if (code === currentRoomCode) {
+    return;
+  }
+  if (!code) {
+    /* The URL has stopped pointing at a room, so leave the one we are in.
+       Only then: a hot-seat game is not something an unrelated fragment
+       has any business destroying. */
+    if (onlineRoom) {
+      exitToStartScreen();
+    }
+    return;
+  }
+  /* Whatever was running has to be torn down first - announcing the
+     departure if it was a room - and that clears the fragment on its way
+     out, so the new code goes back with replaceState rather than an
+     assignment: an assignment would re-enter this listener. */
+  exitToStartScreen();
+  history.replaceState(null, '', `#room=${code}`);
+  startOnline(code);
+});
+
 renderStartScreen();
 
-const roomFromUrl = location.hash.match(/room=([A-Z0-9]{6})/i);
+const roomFromUrl = roomCodeInUrl();
 if (roomFromUrl) {
-  startOnline(roomFromUrl[1].toUpperCase());
+  startOnline(roomFromUrl);
 }
 
 render();
