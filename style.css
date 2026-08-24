@@ -399,13 +399,6 @@ body {
   display: none;
 }
 
-/* The code itself set in mono, so a returning player can recognise the
-   room at a glance rather than reading it as prose. */
-#rejoin-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.05em;
-}
-
 /* A labelled rule, so the two online controls below read as one group
    rather than three unrelated things stacked under the hot-seat button. */
 /* Validation feedback has to live inside the panel: #message, which every
@@ -1165,7 +1158,8 @@ button,
        flex-wrap still needs its own row gap), and h1 below is trimmed
        down from the browser default title margins it used to carry
        unstyled. Measured against #room-status in its uncollapsed form
-       (room code + You are White + waiting text + Copy link + QR), which
+       (You are White + waiting text + Copy link + QR - the room code
+       itself is deliberately not printed, see renderRoomStatus), which
        since the start screen took over the join controls is the only
        thing .online-area ever holds, and is the tallest state it takes -
        the collapsed chip is 6px shorter, and hot-seat leaves the row
@@ -1220,8 +1214,11 @@ button,
        fixed Restart button once the h1 is hidden. */
     /* Re-measured when the lobby's waiting text ("— waiting; nobody else
        is searching", the longest this line ever gets) pushed #room-status
-       2px taller at this width. Both numbers move together, so a hot-seat
-       board is unchanged: it spends chrome minus online-row either way. */
+       2px taller at this width. Dropping the "Room ABCDEF · " prefix
+       from that line later did not move it back: it still wraps to two
+       rows at phone widths, which is the state measured here. Both
+       numbers move together, so a hot-seat board is unchanged: it spends
+       chrome minus online-row either way. */
     --chrome: 266px;
     /* 45px of row plus the dice area's 8px gap. Larger than the desktop
        38px because #room-status wraps onto a second line once it's this
