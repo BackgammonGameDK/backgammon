@@ -38,7 +38,12 @@ Note the two-step chain for icons — `index.html` versions the
 inside `manifest.json`, which is itself versioned from `index.html`. A
 bump therefore refetches the manifest, which then points at fresh icons.
 
-**All eleven tags share one number and must be bumped together**, even if
-only one file actually changed — the script only checks that *some* bump
-happened, not that all eleven stayed in sync, so visually confirm they all
-show the same new number after bumping.
+**All the tags share one number and must be bumped together**, even if only
+one file actually changed. The script now *enforces* that rather than asking
+you to confirm it by eye: it reads every `?v=` in `index.html` and
+`manifest.json` and fails if they disagree, naming the offending line. That
+check runs on every invocation, including on a clean tree, because a
+mismatch is a deploy-time hazard whether or not anything changed in this
+commit — it is how `style.css` once sat a version behind while the script
+tags moved on, producing exactly the mixed-old-and-new state the scheme
+exists to prevent.
