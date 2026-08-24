@@ -210,6 +210,47 @@ body {
   font-size: 18px;
 }
 
+/* A checker in the colour whose turn it is, sitting in front of the words.
+   Fills and borders track .checker.white/.checker.black, with black's
+   border lightened the same way .die.black's is and for the same reason:
+   #222 on the #2b2b2b page is very nearly invisible, so on the page the
+   border has to carry the contrast rather than the fill.
+
+   Sized in em so it tracks the indicator's font at every breakpoint, and
+   deliberately smaller than the line box: it must not be what decides the
+   row's height, since .status-row's height is part of the board's
+   hand-measured --chrome budget. Verified by measuring the row and the
+   board's rect before and after at 1280x800, 390x844 and 812x375. */
+.turn-dot {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.4em;
+  border-radius: 50%;
+  vertical-align: baseline;
+}
+
+.turn-dot.white {
+  background: #f5f5f5;
+  border: 1px solid #999;
+}
+
+.turn-dot.black {
+  background: #222;
+  border: 1px solid #a0a0a0;
+}
+
+/* The opening roll is a recap of something already on screen - the two
+   dice beside it - so it gives way to the turn rather than competing with
+   it at the same size and weight. Smaller and dimmer is the whole
+   separator; there is no dash, which at this size read as more text. */
+.turn-note {
+  margin-left: 0.25em;
+  font-size: 13px;
+  font-weight: normal;
+  color: #999;
+}
+
 #hints-toggle-label {
   font-size: 14px;
   color: #ccc;

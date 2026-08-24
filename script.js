@@ -469,6 +469,61 @@ function renderDocumentTitle() {
   document.title = cue ? `● ${cue} — ${BASE_TITLE}` : BASE_TITLE;
 }
 
+/* Whose move the indicator is about, as a colour - or null when it is
+   nobody's: a finished game, a tie nobody has broken yet, a spectator.
+   During the opening the answer is "whoever still owes a die", which
+   online is always you, since the line speaks to you directly there. */
+function turnIndicatorColor() {
+  if (state.winner) {
+    return null;
+  }
+  if (state.phase === 'opening') {
+    if (isOpeningTie(state)) {
+      return null;
+    }
+    if (onlineRoom) {
+      return onlineColor === 'spectator' ? null : onlineColor;
+    }
+    return state.openingRoll.white === null ? 'white' : 'black';
+  }
+  return state.currentPlayer;
+}
+
+/* Writes the indicator as three parts rather than one string: a checker in
+   the colour whose turn it is, the turn itself, and an optional aside.
+
+   The colour is the point of it. "White's turn — opening roll: White 6,
+   Black 5" is one run of same-sized bold text in which the two words that
+   matter are the two easiest to skim past, and it is the *first* thing a
+   new game shows - reported as hard to read at exactly that moment. A
+   checker answers "whose turn?" before any of it is read, the same
+   wordless cue the dice already carry, and the aside drops to a smaller,
+   dimmer size so the turn leads.
+
+   Built from nodes rather than innerHTML: nothing here is user input, but
+   the rest of the file never assembles markup from strings either. */
+function setTurnIndicator(text, note) {
+  turnIndicator.textContent = '';
+  const color = turnIndicatorColor();
+  if (color) {
+    const dot = document.createElement('span');
+    dot.className = `turn-dot ${color}`;
+    turnIndicator.appendChild(dot);
+  }
+  turnIndicator.appendChild(document.createTextNode(text));
+  if (note) {
+    /* A real space between the two, not just the aside's margin: without
+       it the element's textContent reads "White's turnopening roll: …",
+       which is what a screen reader announces and what a copy of the line
+       contains. */
+    turnIndicator.appendChild(document.createTextNode(' '));
+    const aside = document.createElement('span');
+    aside.className = 'turn-note';
+    aside.textContent = note;
+    turnIndicator.appendChild(aside);
+  }
+}
+
 function renderStatus() {
   const turnText = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
   if (state.winner) {
@@ -476,13 +531,13 @@ function renderStatus() {
        says only that the game has ended - and says *something*, rather
        than emptying, because .status-row's height is part of the board's
        hand-measured budget. */
-    turnIndicator.textContent = 'Game over';
+    setTurnIndicator('Game over');
   } else if (state.phase === 'opening') {
-    turnIndicator.textContent = openingStatusText();
+    setTurnIndicator(openingStatusText());
   } else {
-    turnIndicator.textContent = state.openingRoll
-      ? `${turnText} — opening roll: White ${state.openingRoll.white}, Black ${state.openingRoll.black}`
-      : turnText;
+    setTurnIndicator(turnText, state.openingRoll
+      ? `opening roll: White ${state.openingRoll.white}, Black ${state.openingRoll.black}`
+      : '');
   }
   pipCountEl.textContent = `Pips — White: ${pipCount(state, 'white')} · Black: ${pipCount(state, 'black')}`;
   gameOverEl.textContent = state.winner ? `${state.winner === 'white' ? 'White' : 'Black'} wins!` : '';
