@@ -16,7 +16,7 @@ python3 -m http.server 8000
 
 then open `http://127.0.0.1:8000/index.html`. A plain `file://` open can fail to load `style.css`, or serve a stale cached copy of a script you just edited, in some sandboxed browser tooling — prefer serving it locally when verifying changes, and see the Tests section below for how `tests.html` works around `file://` caching specifically. Don't commit the server process or any server-related files — it's a throwaway dev aid, not part of the app.
 
-**`index.html`'s local `<script>`/`<link>` tags (`style.css`, `rules.js`, `sync.js`, `script.js`, `firebase-config.js`, `qrcode-generator.js`) carry a `?v=N` query string.** GitHub Pages caches static assets and there's no way to set custom cache headers there, so without this a returning visitor's browser can keep running an old cached file indefinitely after a deploy — silently mixing old and new files. This produced two real, confusing bugs, not just one: an old cached `sync.js` whose `claimSeat` still returned a color string instead of mutating the room object during Stage D (which is what prompted adding this in the first place) — and then `style.css` itself was overlooked when that fix was made, so a later CSS change (`--chrome` moving to `:root`) silently didn't take effect in a tab that had visited before, because only the `<script>` tags had been covered. **Bump `N` on all six tags whenever any of those files change, before deploying** — a forgotten bump is invisible until someone with a stale cache hits it. The `cache-bust-check` skill (see Skills below) catches a missed bump mechanically; run it before committing rather than relying on memory.
+**`index.html`'s local `<script>`/`<link>` tags (`style.css`, `rules.js`, `sync.js`, `script.js`, `firebase-config.js`, `qrcode-generator.js`, `manifest.json`) carry a `?v=N` query string.** GitHub Pages caches static assets and there's no way to set custom cache headers there, so without this a returning visitor's browser can keep running an old cached file indefinitely after a deploy — silently mixing old and new files. This produced two real, confusing bugs, not just one: an old cached `sync.js` whose `claimSeat` still returned a color string instead of mutating the room object during Stage D (which is what prompted adding this in the first place) — and then `style.css` itself was overlooked when that fix was made, so a later CSS change (`--chrome` moving to `:root`) silently didn't take effect in a tab that had visited before, because only the `<script>` tags had been covered. **Bump `N` on all seven tags whenever any of those files change, before deploying** — a forgotten bump is invisible until someone with a stale cache hits it. The `cache-bust-check` skill (see Skills below) catches a missed bump mechanically; run it before committing rather than relying on memory.
 
 **The `?v=N` scheme has a blind spot: `index.html` itself.** Bumping the query string only helps once a browser fetches a fresh `index.html` to learn the new number, and GitHub Pages serves that file with `cache-control: max-age=600`. So for roughly ten minutes after a deploy, a returning visitor can keep using their cached `index.html`, which still asks for `?v=<old>` — and they still have *that* in cache too, with the old contents. The result is the exact mixed-old-and-new state this whole scheme exists to prevent, just moved up one level, and nothing can be done about it from inside the repo: custom headers aren't available on GitHub Pages. **So a fresh deploy has to be tested with a hard reload, not an ordinary revisit.** This produced a real bug report: after dice were given per-player colours, one device showed white dice on both players' turns while another showed them correctly — the first was running a cached `style.css` from before the change, which had no `.die.black` rule at all, so every die fell back to the default light styling. Suspect this before suspecting the code whenever a change appears to work on one device and not another.
 
@@ -232,6 +232,57 @@ Two consequences worth knowing:
 
 Hot-seat and spectators keep White's view — with two people at one screen there is no "your side" to take, and a spectator has no seat. `setBoardPerspective` is idempotent by construction (`classList.toggle` with an explicit boolean), which matters because `handleRoomUpdate` calls it on every room change rather than only the first, and `exitToStartScreen` resets it **outside** its online branch: that function restores the screen to what a fresh visit would find, and that shouldn't depend on how the board came to be flipped.
 
+### Installed to the home screen (`manifest.json`, the head of `index.html`)
+
+The game is installable: Share → Add to Home Screen gives it an icon that opens
+full screen, with no address bar and its own entry in the app switcher. That is
+worth having for a reason beyond looks — the board is the tightest thing on a
+phone screen, and browser furniture costs it height. `manifest.json` plus eight
+lines in the head is the whole feature; there is no service worker and no
+install prompt.
+
+**There is deliberately no `viewport-fit=cover`, and that is the load-bearing
+decision.** Without it iOS keeps the page inside the safe area, so `100dvh` is
+the *usable* height and every hand-measured `--chrome` constant stays valid
+exactly as measured. Going edge-to-edge would mean `100dvh` starting to include
+the status bar and home-indicator strips — sizing the board for roughly 90px it
+cannot use — and would require re-deriving all four `--chrome` values plus their
+paired `--online-row`s, whose failure mode is silent. It would also drop
+`.corner-controls` (`top: 8px; right: 8px` on small screens) under the Dynamic
+Island, and drag `.status-row`'s measured `margin-top: 36px` along with it. The
+cost of staying inside the safe area is two thin strips, which `theme-color`
+paints `#2b2b2b` to match the page. **Stage 1 changed no CSS at all**, and the
+board's rect was measured identical before and after at 375×812, 1280×800 and
+812×375 — if a change here moves any of those, something is wrong.
+
+`apple-mobile-web-app-status-bar-style` is `black` rather than
+`black-translucent` for the same reason: the translucent variant is precisely
+what forces content under the status bar.
+
+**`start_url` is `./index.html` with no hash, on purpose.** iOS otherwise pins
+the icon to whatever URL was showing when it was added, so an icon added
+mid-game would relaunch into that room every time — and rooms now delete
+themselves once spent, so it would relaunch into one that no longer exists.
+Paths are relative (`./`) because the site is served from `/backgammon/` on
+Pages, not a domain root.
+
+Two consequences that are documented rather than fixed. **An installed app is a
+separate storage context from Safari**, so its `localStorage` starts empty: the
+first launch offers no Rejoin, and a seat held in a Safari tab is not
+recoverable from the icon (`identityFor` mints a fresh id). One-time, not
+ongoing. And **`renderDocumentTitle`'s "● Your turn" cue is invisible in
+standalone** — there is no tab strip to show it. Nothing breaks; the cue is
+simply gone, which is worth knowing since it was the only signal a backgrounded
+game had.
+
+**Without a service worker the app still needs network to launch** — the icon
+loads the page from Pages, so offline it shows Safari's error page rather than
+the game. Caching the shell would fix that and is free, but it layers a second
+cache-invalidation problem on top of the `?v=N` scheme documented above, which
+has already caused two real bugs; done carelessly it turns the ten-minute stale
+window into "until the user deletes the app". Left out on purpose (see README's
+Future Improvements).
+
 ### Responsive layout (`style.css`, `script.js`)
 
 `--chrome` (a root CSS var, redefined per breakpoint) is every pixel of vertical space besides the board's own height, subtracted in `.board`'s `max-width: calc((100dvh - var(--chrome) + var(--reclaimed)) * 950 / 640)` so the board fills whatever's left. It's measured by hand against the actual rendered layout, not calculated from the CSS rules or guessed (see the comment on the base value for the method), and has to be re-measured whenever the content above/around the board changes height — nothing else catches a stale value except the board quietly running off the bottom of the viewport, or leaving unused space it could have grown into.
@@ -299,7 +350,7 @@ The `run-tests` skill (see Skills below) wraps exactly this invocation and is th
 Three project skills wrap the manual routines above so they're one command instead of something to remember. Each is a `SKILL.md` plus a `scripts/` shell script; the script is the real logic, so it's runnable directly (`bash .claude/skills/<name>/scripts/<script>.sh`) without going through the skill. `.claude/` is deliberately tracked in git so these ship with the repo — only `.claude/launch.json` and `.claude/settings.local.json` are ignored, since they hold machine-specific paths and permissions.
 
 - **`run-tests`** — runs the suite under `jsc` (the `run-tests.js` path above), which is the reliable way; prefer it over `tests.html` and over composing the raw `jsc` invocation by hand. Its SKILL.md explains what a hang or "NO RESULTS" actually means, so don't reinterpret one independently.
-- **`cache-bust-check`** — compares which of the six versioned assets have uncommitted changes against whether `index.html`'s `?v=N` tags were touched too, exiting non-zero if a bump was missed. It only verifies that *some* bump happened, not that all six tags stayed in sync — still confirm all six show the same new number by eye.
+- **`cache-bust-check`** — compares which of the seven versioned assets have uncommitted changes against whether `index.html`'s `?v=N` tags were touched too, exiting non-zero if a bump was missed. It only verifies that *some* bump happened, not that all seven tags stayed in sync — still confirm all seven show the same new number by eye. The icon PNGs are deliberately outside this set: they are immutable in practice, and a stale icon is cosmetic where a stale script is the mixed-old-and-new state the scheme exists to prevent.
 - **`ship-check`** — the pre-push gate: runs the two skills above, greps `rules.js` for DOM references (enforcing the purity split described under Architecture), and warns if the push carries changes to documented files without touching `CLAUDE.md`/`README.MD`. The first three gates fail hard; the docs gate only warns, because whether a doc is genuinely stale is a judgement call a script can't make. Run it immediately before `git push`.
 
 When one of these routines changes, update both the script and its `SKILL.md` — the SKILL.md is what a future session reads to decide *whether* to run it, and a script whose description no longer matches simply stops being invoked at the right moments.

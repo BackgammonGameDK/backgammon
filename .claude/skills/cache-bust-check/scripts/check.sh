@@ -2,7 +2,12 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-VERSIONED_FILES="style.css firebase-config.js qrcode-generator.js rules.js sync.js script.js"
+# manifest.json joined this set when the game became installable: it is
+# served by Pages and referenced from index.html like any other asset, so a
+# stale copy is the same class of problem. The icons deliberately stay out -
+# they are immutable in practice, and a stale icon is cosmetic where a stale
+# script is the mixed-old-and-new state this whole scheme exists to prevent.
+VERSIONED_FILES="style.css firebase-config.js qrcode-generator.js rules.js sync.js script.js manifest.json"
 
 CHANGED=$(git diff --name-only HEAD -- $VERSIONED_FILES)
 CHANGED_STAGED=$(git diff --staged --name-only HEAD -- $VERSIONED_FILES)
@@ -22,9 +27,9 @@ echo ""
 
 if [ -z "$VERSION_LINE_CHANGED" ] && [ -z "$VERSION_LINE_CHANGED_STAGED" ]; then
   echo "WARNING: index.html's ?v= tags do NOT appear to have changed."
-  echo "Bump the version number on all six tags in index.html before committing/deploying."
+  echo "Bump the version number on all seven tags in index.html before committing/deploying."
   exit 1
 else
-  echo "index.html's ?v= tags show changes. Verify all six tags share the same new number."
+  echo "index.html's ?v= tags show changes. Verify all seven tags share the same new number."
   exit 0
 fi
