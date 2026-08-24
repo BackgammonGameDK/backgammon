@@ -1002,20 +1002,15 @@ rotateHintEl.addEventListener('click', dismissRotateHint);
  * client gets there first (handleRoomUpdate), once both seats are filled.
  */
 
-/* Withdraws this client's advertisement and stops counting. Called when an
-   opponent arrives - from the queue or from an invite link, which are
-   indistinguishable by the time the second seat is claimed - and when the
-   player leaves. Safe to call when there is nothing to withdraw. */
+/* Withdraws this client's advertisement. Called when an opponent arrives -
+   from the queue or from an invite link, which are indistinguishable by
+   the time the second seat is claimed - and when the player leaves. Safe
+   to call when there is nothing to withdraw. */
 function stopSearching() {
   if (lobbyAdvertisement) {
     lobbyAdvertisement.stop();
     lobbyAdvertisement = null;
   }
-  if (lobbyCountDetach) {
-    lobbyCountDetach();
-    lobbyCountDetach = null;
-  }
-  othersSearching = 0;
 }
 
 function leaveStartScreen() {
@@ -1139,12 +1134,14 @@ let latestRoom = null;
    only when that stops matching currentRoomCode, rather than on every
    toggle-open. */
 let qrRenderedForRoom = null;
-/* This client's lobby advertisement while it waits to be claimed, and the
-   detach for the live count of other people searching. Both are cleared
-   the moment an opponent arrives, by whichever route. */
+/* This client's lobby advertisement while it waits to be claimed, cleared
+   the moment an opponent arrives, by whichever route. There used to be a
+   live count of other searchers beside it, feeding "2 others searching"
+   into the waiting line; the line says only "Waiting for an opponent…"
+   now, so the subscription that fed it is gone rather than left running
+   for nobody. sync.js's watchLobbyCount stays - the test suite observes
+   the queue through it, and it is one call away if the count returns. */
 let lobbyAdvertisement = null;
-let lobbyCountDetach = null;
-let othersSearching = 0;
 /* Set while joining a room the lobby handed us, so that landing as a
    spectator can be recognised as a stale advertisement rather than a
    deliberate spectate - see handleRoomUpdate. */
@@ -1243,35 +1240,36 @@ function renderRoomStatus(room) {
      never by a connection simply dropping - which is the difference
      between "they quit" and "they might be back in a second". */
   const otherDeparted = seatTaken && Boolean(room.departed && room.departed[other]);
-  const you = onlineColor === 'spectator' ? 'Spectating' : `You are ${onlineColor === 'white' ? 'White' : 'Black'}`;
+  const you = `You are ${onlineColor === 'white' ? 'White' : 'Black'}`;
 
-  let status = '';
-  if (onlineColor !== 'spectator') {
-    if (!seatTaken) {
-      /* An empty queue has to read as information rather than as a page
-         that has frozen - "nobody else is looking" tells you to send the
-         link, which is right there beside this text. */
-      status = lobbyAdvertisement
-        ? othersSearching === 0
-          ? ' — waiting; nobody else is searching'
-          : ` — waiting; ${othersSearching} other${othersSearching === 1 ? '' : 's'} searching`
-        : ' — waiting for opponent…';
-    } else if (otherDeparted) {
-      /* Checked before presence: leaving clears presence too, so an
-         opponent who quit satisfies both conditions and the more
-         specific one has to win. */
-      status = ' — opponent left the game';
-    } else if (!otherPresent) {
-      status = ' — opponent disconnected';
-    }
+  /* One line, built whole rather than as a prefix plus a suffix, because
+     the waiting case now replaces the prefix rather than adding to it.
+
+     No room code in any of them, on purpose. It is the one piece of this
+     line that nobody who came in through Find an opponent ever needs: it
+     is in the address bar, and both ways of handing it to somebody (Copy
+     link, QR) carry it without anyone having to read it off the screen.
+     What is left is only what the player can act on. */
+  let line = '';
+  if (onlineColor === 'spectator') {
+    line = 'Spectating';
+  } else if (!seatTaken) {
+    /* The whole line, not "You are White — waiting…": before an opponent
+       exists your colour decides nothing, and the count of other
+       searchers ("nobody else is searching", "2 others searching") was a
+       fact about the queue rather than something the player could act
+       on. Copy link and QR sit right beside this, which is the one thing
+       an empty queue actually calls for. */
+    line = 'Waiting for an opponent…';
+  } else if (otherDeparted) {
+    /* Checked before presence: leaving clears presence too, so an
+       opponent who quit satisfies both conditions and the more specific
+       one has to win. */
+    line = `${you} — opponent left the game`;
+  } else if (!otherPresent) {
+    line = `${you} — opponent disconnected`;
   }
-  /* No room code here on purpose. It is the one piece of this line that
-     nobody who came in through Find an opponent ever needs: it is in the
-     address bar, and both ways of handing it to somebody (Copy link, QR)
-     carry it without anyone having to read it off the screen. What is
-     left is only what the player can act on - who they are, and what the
-     game is waiting for. */
-  roomInfoEl.textContent = `${you}${status}`;
+  roomInfoEl.textContent = line;
   roomStatusEl.classList.toggle('room-status--warning', otherDeparted || (seatTaken && !otherPresent));
 
   /* The row earns its space only while it has something to say. During an
@@ -1281,8 +1279,9 @@ function renderRoomStatus(room) {
      board grows into the space (see --reclaimed in style.css), and comes
      back by itself the moment there is news: an opponent who has not
      arrived, disconnected, or left. A spectator always sees it, since
-     otherwise nothing on screen would say they cannot play. */
-  const worthARow = status !== '' || onlineColor === 'spectator';
+     otherwise nothing on screen would say they cannot play - which falls
+     out of the line above being non-empty for them. */
+  const worthARow = line !== '';
   roomStatusEl.hidden = !worthARow;
   roomDetailsEl.hidden = false;
   document.body.classList.toggle('showing-room-row', worthARow);
@@ -1447,17 +1446,6 @@ playOnlineButton.addEventListener('click', () => {
     .then(({ roomCode, advertisement }) => {
       lobbyAdvertisement = advertisement;
       joinedFromLobby = advertisement === null;
-      if (advertisement) {
-        lobbyCountDetach = watchLobbyCount(
-          (n) => {
-            othersSearching = n;
-            if (onlineRoom) {
-              renderRoomStatus(latestRoom || { seats: {} });
-            }
-          },
-          { skipEntryId: advertisement.entryId }
-        );
-      }
       location.hash = `room=${roomCode}`;
       startOnline(roomCode);
     })
