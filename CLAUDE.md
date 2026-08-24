@@ -16,7 +16,7 @@ python3 -m http.server 8000
 
 then open `http://127.0.0.1:8000/index.html`. A plain `file://` open can fail to load `style.css`, or serve a stale cached copy of a script you just edited, in some sandboxed browser tooling — prefer serving it locally when verifying changes, and see the Tests section below for how `tests.html` works around `file://` caching specifically. Don't commit the server process or any server-related files — it's a throwaway dev aid, not part of the app.
 
-**`index.html`'s local `<script>`/`<link>` tags (`style.css`, `rules.js`, `sync.js`, `script.js`, `firebase-config.js`, `qrcode-generator.js`, `manifest.json`) carry a `?v=N` query string.** GitHub Pages caches static assets and there's no way to set custom cache headers there, so without this a returning visitor's browser can keep running an old cached file indefinitely after a deploy — silently mixing old and new files. This produced two real, confusing bugs, not just one: an old cached `sync.js` whose `claimSeat` still returned a color string instead of mutating the room object during Stage D (which is what prompted adding this in the first place) — and then `style.css` itself was overlooked when that fix was made, so a later CSS change (`--chrome` moving to `:root`) silently didn't take effect in a tab that had visited before, because only the `<script>` tags had been covered. **Bump `N` on all seven tags whenever any of those files change, before deploying** — a forgotten bump is invisible until someone with a stale cache hits it. The `cache-bust-check` skill (see Skills below) catches a missed bump mechanically; run it before committing rather than relying on memory.
+**`index.html`'s local `<script>`/`<link>` tags (`style.css`, `rules.js`, `sync.js`, `script.js`, `firebase-config.js`, `qrcode-generator.js`, `manifest.json`, and the four `icon-*.png`) carry a `?v=N` query string.** GitHub Pages caches static assets and there's no way to set custom cache headers there, so without this a returning visitor's browser can keep running an old cached file indefinitely after a deploy — silently mixing old and new files. This produced two real, confusing bugs, not just one: an old cached `sync.js` whose `claimSeat` still returned a color string instead of mutating the room object during Stage D (which is what prompted adding this in the first place) — and then `style.css` itself was overlooked when that fix was made, so a later CSS change (`--chrome` moving to `:root`) silently didn't take effect in a tab that had visited before, because only the `<script>` tags had been covered. **Bump `N` on all eleven tags whenever any of those files change, before deploying** — a forgotten bump is invisible until someone with a stale cache hits it. The `cache-bust-check` skill (see Skills below) catches a missed bump mechanically; run it before committing rather than relying on memory.
 
 **The `?v=N` scheme has a blind spot: `index.html` itself.** Bumping the query string only helps once a browser fetches a fresh `index.html` to learn the new number, and GitHub Pages serves that file with `cache-control: max-age=600`. So for roughly ten minutes after a deploy, a returning visitor can keep using their cached `index.html`, which still asks for `?v=<old>` — and they still have *that* in cache too, with the old contents. The result is the exact mixed-old-and-new state this whole scheme exists to prevent, just moved up one level, and nothing can be done about it from inside the repo: custom headers aren't available on GitHub Pages. **So a fresh deploy has to be tested with a hard reload, not an ordinary revisit.** This produced a real bug report: after dice were given per-player colours, one device showed white dice on both players' turns while another showed them correctly — the first was running a cached `style.css` from before the change, which had no `.die.black` rule at all, so every die fell back to the default light styling. Suspect this before suspecting the code whenever a change appears to work on one device and not another.
 
@@ -294,10 +294,23 @@ files, so a layout mistake is a mismatch against them rather than something
 that merely looks odd — reading the PNG back and comparing all 24 points and
 all 30 checkers against `initialPoints()` catches it in a second.
 
-**The icons are not in the `?v=N` set**, so replacing one does not invalidate
-anything else — but iOS copies the icon when the game is added to the home
-screen, so an already-installed player keeps the old one until they remove and
-re-add it.
+**The icons are versioned too, and the reasoning that once said otherwise was
+wrong.** They were left out on the grounds that they are immutable in practice
+and a stale one would only be cosmetic. Both halves failed within a day: the
+icon was replaced twice, and because its URL never changed, a player who
+deleted the home-screen app and re-added it *still* got the old picture out of
+Safari's cache, with no way to force a refetch — deleting the app does not
+delete the cached PNG behind it. The rule is now simply that anything Pages
+serves and `index.html` or `manifest.json` points at is versioned.
+
+The chain is two steps for the icons the manifest names: `index.html` versions
+`apple-touch-icon` directly, while the manifest's own `icons[].src` carry the
+version inside `manifest.json`, which is itself versioned from `index.html`. A
+bump therefore refetches the manifest, which then points at fresh icons.
+
+iOS still copies the icon at Add-to-Home-Screen time, so an already-installed
+player has to remove and re-add to pick up a new one — but now that will
+actually get them the new one.
 
 Two consequences that are documented rather than fixed. **An installed app is a
 separate storage context from Safari**, so its `localStorage` starts empty: the
@@ -383,7 +396,7 @@ The `run-tests` skill (see Skills below) wraps exactly this invocation and is th
 Three project skills wrap the manual routines above so they're one command instead of something to remember. Each is a `SKILL.md` plus a `scripts/` shell script; the script is the real logic, so it's runnable directly (`bash .claude/skills/<name>/scripts/<script>.sh`) without going through the skill. `.claude/` is deliberately tracked in git so these ship with the repo — only `.claude/launch.json` and `.claude/settings.local.json` are ignored, since they hold machine-specific paths and permissions.
 
 - **`run-tests`** — runs the suite under `jsc` (the `run-tests.js` path above), which is the reliable way; prefer it over `tests.html` and over composing the raw `jsc` invocation by hand. Its SKILL.md explains what a hang or "NO RESULTS" actually means, so don't reinterpret one independently.
-- **`cache-bust-check`** — compares which of the seven versioned assets have uncommitted changes against whether `index.html`'s `?v=N` tags were touched too, exiting non-zero if a bump was missed. It only verifies that *some* bump happened, not that all seven tags stayed in sync — still confirm all seven show the same new number by eye. The icon PNGs are deliberately outside this set: they are immutable in practice, and a stale icon is cosmetic where a stale script is the mixed-old-and-new state the scheme exists to prevent.
+- **`cache-bust-check`** — compares which of the eleven versioned assets have uncommitted changes against whether `index.html`'s `?v=N` tags were touched too, exiting non-zero if a bump was missed. It only verifies that *some* bump happened, not that all eleven tags stayed in sync — still confirm they all show the same new number by eye.
 - **`ship-check`** — the pre-push gate: runs the two skills above, greps `rules.js` for DOM references (enforcing the purity split described under Architecture), and warns if the push carries changes to documented files without touching `CLAUDE.md`/`README.MD`. The first three gates fail hard; the docs gate only warns, because whether a doc is genuinely stale is a judgement call a script can't make. Run it immediately before `git push`.
 
 When one of these routines changes, update both the script and its `SKILL.md` — the SKILL.md is what a future session reads to decide *whether* to run it, and a script whose description no longer matches simply stops being invoked at the right moments.
