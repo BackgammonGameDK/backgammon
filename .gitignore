@@ -6,3 +6,9 @@ firebase-debug.log
 # there), but these two hold machine-specific paths and permissions.
 .claude/launch.json
 .claude/settings.local.json
+
+# Python bytecode. tools/make-icons.py is a plain script nothing imports,
+# but reading it back to verify a rendered icon does import it, and that
+# leaves a __pycache__ behind.
+__pycache__/
+*.pyc
