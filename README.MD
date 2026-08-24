@@ -488,6 +488,17 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      because Firebase holds the state; a hot-seat game lives only in memory
      and dies on refresh. `state` is already JSON-serializable, so this is
      `localStorage` plus a decision about when to clear it.
+   - **A service worker, so the installed app opens with no network.** The
+     home-screen icon still loads the page from GitHub Pages, so offline it
+     shows Safari's error page rather than the game — even though hot-seat
+     play itself needs no network at all. Caching the seven local files
+     would fix that, and it is free and small. Deliberately not done yet:
+     it layers a second cache-invalidation problem on top of the `?v=N`
+     scheme, which has already caused two real bugs and leaves a
+     ten-minute stale window after every deploy. Done carelessly a service
+     worker turns that window into "until the user deletes the app". If it
+     is built it wants the version baked into the cache name, keyed to the
+     same `N`, and its own gate in `ship-check`.
 
    Also noted while building the "your turn" tab-title cue (item 6): the
    **Notifications API** is the only thing that would actually reach a phone
@@ -627,6 +638,12 @@ A "Play Online" button lets players share a live game via a room code in the URL
 The game is also published online (GitHub Pages) and the layout is now responsive: the board keeps its 950x640 proportions but scales to fit the screen, with everything inside sized as a percentage of it. Desktop is unchanged at full size; phones get a compacted dice area, proportionally larger checkers, and a nudge to rotate to landscape, where a 24-point board has far more room.
 
 Two polish passes since: the board's height-aware sizing (previously phone-only) now also applies on desktop, so a browser window that isn't maximized shrinks the board to fit rather than running it off the bottom of the screen; and `#message`/`#game-over` no longer reserve empty space when there's nothing to show, closing what had become a visible gap between Roll and the board. A win now shows a dismissible full-screen celebration (confetti, a "Play Again" button) on top of the existing small status line, rather than only the status line.
+
+The game can now be installed to a phone's home screen. Share → Add to Home Screen gives it an icon that opens full screen, with no address bar and its own entry in the app switcher — which matters beyond looks, since the board is the tightest thing on a phone and browser furniture costs it height. A manifest, an icon drawn from the board's own palette, and eight lines in the head; no service worker, no install prompt, nothing to pay for and nothing to download.
+
+The decision worth recording is what was left out. No `viewport-fit=cover`, so iOS keeps the page inside the safe area: `100dvh` stays the usable height, all four hand-measured `--chrome` constants remain valid untouched, and the fixed Exit/Restart controls cannot land under the Dynamic Island. Going edge-to-edge would have meant re-deriving those constants, whose failure mode is the board silently running off the bottom of the screen. Stage one therefore changed no CSS at all, and the board's rect was measured identical before and after at three viewport sizes.
+
+Two things are given up in exchange, both documented rather than fixed: an installed app is a separate storage context from Safari, so its first launch offers no Rejoin and cannot recover a seat held in a Safari tab; and the "● Your turn" tab-title cue is invisible when there is no tab strip.
 
 Rooms now clean themselves up in the two cases where nobody could want them again: one whose second player never arrived, and a finished game both players have deliberately left. The lobby made the first worth doing — it creates a room every time somebody starts searching rather than every time a game happens, so most rooms are advertisements nobody answered. An unfinished game is never removed however thoroughly both players walk away, because that is exactly what Rejoin exists to get you back into. Everything else stays a console job: there is no listing, and removing somebody else's game is not a client's business.
 

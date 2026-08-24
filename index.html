@@ -4,7 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backgammon</title>
-  <link rel="stylesheet" href="style.css?v=57">
+  <!-- Add to Home Screen. Tapping Share -> Add to Home Screen installs the
+       game as its own icon, and it then opens full screen with no address
+       bar and its own entry in the app switcher - which is the whole point,
+       since the board is already the tightest thing on a phone screen and
+       browser furniture costs it height.
+
+       Deliberately no `viewport-fit=cover`: without it iOS keeps the page
+       inside the safe area, so 100dvh stays the *usable* height and every
+       hand-measured --chrome constant in style.css remains valid. Going
+       edge-to-edge would mean re-deriving all four of them (their failure
+       mode is silent - the board runs off the bottom) and would drop the
+       fixed Exit/Restart controls under the Dynamic Island. The two thin
+       strips it costs are painted with theme-color below, so on this dark
+       page they should not be visible at all.
+
+       `black`, not `black-translucent`: the translucent variant is exactly
+       what forces content under the status bar. -->
+  <link rel="manifest" href="manifest.json?v=58">
+  <meta name="theme-color" content="#2b2b2b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Backgammon">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css?v=58">
 </head>
 <body>
   <h1>Backgammon</h1>
@@ -157,10 +182,10 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=57"></script>
-  <script src="qrcode-generator.js?v=57"></script>
-  <script src="rules.js?v=57"></script>
-  <script src="sync.js?v=57"></script>
-  <script src="script.js?v=57"></script>
+  <script src="firebase-config.js?v=58"></script>
+  <script src="qrcode-generator.js?v=58"></script>
+  <script src="rules.js?v=58"></script>
+  <script src="sync.js?v=58"></script>
+  <script src="script.js?v=58"></script>
 </body>
 </html>
