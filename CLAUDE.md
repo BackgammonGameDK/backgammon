@@ -267,20 +267,32 @@ Paths are relative (`./`) because the site is served from `/backgammon/` on
 Pages, not a domain root.
 
 **The icon is the game's own board, generated rather than drawn**
-(`tools/make-icons.py`): the right half at the opening position, with every
+(`tools/make-icons.py`): the whole board at the opening position, with every
 colour lifted from `style.css` and every checker from `initialPoints()` in
-`rules.js`. The right half is the one worth showing — it holds both home boards,
-and the opening position puts a five-stack and a two-stack in each row.
+`rules.js`. The board is letterboxed at its real 950x640 proportions rather
+than stretched to fill the square, which costs about 40% of the icon's height
+— hence the deliberately thin frame on this layout, since every pixel spent on
+frame is one the board does not get.
+
+`LAYOUT` at the top of the script switches between `full` and `half`, the
+latter being the right half of the board (both home boards) which fills the
+square and reads bolder at small sizes. Both are kept because the trade is
+genuine and only visible on a real home screen: the whole board is the more
+recognisable silhouette, the half is the more legible at 180px. Pass a layout
+name as the second argument to render one without editing the file.
 
 The script is run by hand and committed alongside its output; it is not build
 tooling and nothing invokes it, so the "no build step" property is intact. It
 exists because the icon encodes constants that live in two other files, and a
 palette change would otherwise leave four opaque PNGs nobody could regenerate.
 It uses only `zlib` and `struct`, there being no Pillow on this machine and no
-SVG rasteriser. One deliberate infidelity: the checkers are drawn slimmer than
-the real board's 78% of point width, because points 19 and 6 share a column and
-their five-stacks all but touch at full size — which at 180px reads as a single
-stripe of beads rather than two opposing stacks.
+SVG rasteriser.
+
+**Check a regenerated icon by sampling it, not by eye.** Every point's
+alternating colour and every checker's position is derived from the two source
+files, so a layout mistake is a mismatch against them rather than something
+that merely looks odd — reading the PNG back and comparing all 24 points and
+all 30 checkers against `initialPoints()` catches it in a second.
 
 **The icons are not in the `?v=N` set**, so replacing one does not invalidate
 anything else — but iOS copies the icon when the game is added to the home
