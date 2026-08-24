@@ -524,8 +524,35 @@ function setTurnIndicator(text, note) {
   }
 }
 
+/* Whose turn it is, said to whoever is reading it. Online the two clients
+   render the same shared state, so "White's turn" is identical on both
+   screens and answers the wrong question - it says which colour is on
+   turn, not whether that is you. Reported from a two-device test with the
+   colour dot already in: "it says White's turn on both devices". Seated
+   online it is therefore "Your turn" or "Opponent's turn"; the dot beside
+   it still carries which colour that is.
+
+   Hot-seat keeps the colour names, since two people at one screen have no
+   "you" to address, and so do spectators, who are neither player. */
+function turnLine() {
+  if (onlineRoom && (onlineColor === 'white' || onlineColor === 'black')) {
+    return state.currentPlayer === onlineColor ? 'Your turn' : "Opponent's turn";
+  }
+  return `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
+}
+
+/* The result, said the same way turnLine says the turn: "White wins!" is
+   identical on both screens, so the loser has to know their own colour to
+   read it. Hot-seat and spectators keep the colour name. */
+function winnerLine() {
+  if (onlineRoom && (onlineColor === 'white' || onlineColor === 'black')) {
+    return state.winner === onlineColor ? 'You win!' : 'Opponent wins';
+  }
+  return `${state.winner === 'white' ? 'White' : 'Black'} wins!`;
+}
+
 function renderStatus() {
-  const turnText = `${state.currentPlayer === 'white' ? 'White' : 'Black'}'s turn`;
+  const turnText = turnLine();
   if (state.winner) {
     /* It is nobody's turn any more. #game-over carries who won, so this
        says only that the game has ended - and says *something*, rather
@@ -540,7 +567,7 @@ function renderStatus() {
       : '');
   }
   pipCountEl.textContent = `Pips — White: ${pipCount(state, 'white')} · Black: ${pipCount(state, 'black')}`;
-  gameOverEl.textContent = state.winner ? `${state.winner === 'white' ? 'White' : 'Black'} wins!` : '';
+  gameOverEl.textContent = state.winner ? winnerLine() : '';
   renderCelebration();
 }
 
@@ -577,7 +604,7 @@ function renderCelebration() {
   }
   celebrationShownFor = state.winner;
 
-  celebrationMessageEl.textContent = `${state.winner === 'white' ? 'White' : 'Black'} wins!`;
+  celebrationMessageEl.textContent = winnerLine();
   spawnConfetti();
   celebrationEl.hidden = false;
 }
