@@ -266,6 +266,27 @@ themselves once spent, so it would relaunch into one that no longer exists.
 Paths are relative (`./`) because the site is served from `/backgammon/` on
 Pages, not a domain root.
 
+**The icon is the game's own board, generated rather than drawn**
+(`tools/make-icons.py`): the right half at the opening position, with every
+colour lifted from `style.css` and every checker from `initialPoints()` in
+`rules.js`. The right half is the one worth showing — it holds both home boards,
+and the opening position puts a five-stack and a two-stack in each row.
+
+The script is run by hand and committed alongside its output; it is not build
+tooling and nothing invokes it, so the "no build step" property is intact. It
+exists because the icon encodes constants that live in two other files, and a
+palette change would otherwise leave four opaque PNGs nobody could regenerate.
+It uses only `zlib` and `struct`, there being no Pillow on this machine and no
+SVG rasteriser. One deliberate infidelity: the checkers are drawn slimmer than
+the real board's 78% of point width, because points 19 and 6 share a column and
+their five-stacks all but touch at full size — which at 180px reads as a single
+stripe of beads rather than two opposing stacks.
+
+**The icons are not in the `?v=N` set**, so replacing one does not invalidate
+anything else — but iOS copies the icon when the game is added to the home
+screen, so an already-installed player keeps the old one until they remove and
+re-add it.
+
 Two consequences that are documented rather than fixed. **An installed app is a
 separate storage context from Safari**, so its `localStorage` starts empty: the
 first launch offers no Rejoin, and a seat held in a Safari tab is not
