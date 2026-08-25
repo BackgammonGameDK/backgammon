@@ -496,11 +496,14 @@ Ideas beyond the core build plan, not scheduled to a specific stage:
      play itself needs no network at all. Caching the seven local files
      would fix that, and it is free and small. Deliberately not done yet:
      it layers a second cache-invalidation problem on top of the `?v=N`
-     scheme, which has already caused two real bugs and leaves a
+     scheme, which has already caused three real bugs and leaves a
      ten-minute stale window after every deploy. Done carelessly a service
      worker turns that window into "until the user deletes the app". If it
      is built it wants the version baked into the cache name, keyed to the
-     same `N`, and its own gate in `ship-check`.
+     same `N`, and its own gate in `ship-check` — and it now has to
+     cooperate with `checkForNewVersion`, which reloads a page whose
+     version has moved on and would otherwise be handed the same cached
+     shell by the worker it is trying to escape.
 
    Also noted while building the "your turn" tab-title cue (item 6): the
    **Notifications API** is the only thing that would actually reach a phone
