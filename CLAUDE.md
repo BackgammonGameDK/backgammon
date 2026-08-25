@@ -20,6 +20,12 @@ then open `http://127.0.0.1:8000/index.html`. A plain `file://` open can fail to
 
 **The `?v=N` scheme has a blind spot: `index.html` itself.** Bumping the query string only helps once a browser fetches a fresh `index.html` to learn the new number, and GitHub Pages serves that file with `cache-control: max-age=600`. So for roughly ten minutes after a deploy, a returning visitor can keep using their cached `index.html`, which still asks for `?v=<old>` — and they still have *that* in cache too, with the old contents. The result is the exact mixed-old-and-new state this whole scheme exists to prevent, just moved up one level, and nothing can be done about it from inside the repo: custom headers aren't available on GitHub Pages. **So a fresh deploy has to be tested with a hard reload, not an ordinary revisit.** This produced a real bug report: after dice were given per-player colours, one device showed white dice on both players' turns while another showed them correctly — the first was running a cached `style.css` from before the change, which had no `.die.black` rule at all, so every die fell back to the default light styling. Suspect this before suspecting the code whenever a change appears to work on one device and not another.
 
+**The page now checks its own version, and shows it (`runningVersion`, `renderVersionMarker`, `checkForNewVersion`, `#version-marker`).** The blind spot above is worse than ten minutes on an iPhone: an app added to the home screen **resumes rather than reloads**, so the page can keep running from whenever it was first opened — days ago — never re-fetching `index.html` at all. That produced a second real bug report. Play Again on a finished online game did nothing on the phone and worked immediately on the computer; the phone was running a build older than `a49ac03`, whose known symptom is exactly a restart that will not clear. Nothing on screen said so. The only clue was that a line of text elsewhere still had its pre-v63 wording.
+
+So two things sit at the bottom of `script.js`. `#version-marker` on the start screen prints the build this device is actually running, read back off the page's own `script.js?v=` tag rather than kept as a constant — a constant would be bumped in the same commit as the tags and so could never disagree with them, which is precisely the disagreement worth seeing. And `checkForNewVersion()` fetches `index.html` with `cache: 'no-store'`, compares its `?v=` against the running one, and reloads when they differ. It runs at load, on `visibilitychange` back to visible, on `pageshow` (bfcache and the iOS standalone resume, which `visibilitychange` does not reliably cover), and from `exitToStartScreen`, throttled to one request a minute.
+
+Three details are load-bearing. **A hot-seat game is never reloaded out from under the player** — that state exists only in the page, so being on an old build is the lesser harm; the marker turns amber instead, and the exit-triggered check picks it up the moment the game ends. **An online game is reloaded**, and safely: every move is already in the room and the code is in the URL, so the reload rejoins. And **one reload attempt per version per tab** (`bg:reload-for` in `sessionStorage`), because the situation this exists for is a browser handing back a cached `index.html` — if it keeps doing so the reload cannot help, and without the guard it would loop forever.
+
 Online play needs the Firebase SDK to actually reach the network — verifying it end-to-end means either two real tabs/devices pointed at the same room code, or working at the `rules.js`/`sync.js` level directly (see Tests).
 
 ## Architecture
@@ -340,6 +346,8 @@ ongoing. And **`renderDocumentTitle`'s "● Your turn" cue is invisible in
 standalone** — there is no tab strip to show it. Nothing breaks; the cue is
 simply gone, which is worth knowing since it was the only signal a backgrounded
 game had.
+
+The staleness this creates is covered above (`checkForNewVersion`): a standalone app resumes rather than reloads, so without that check it can run a build from the day it was installed.
 
 **Without a service worker the app still needs network to launch** — the icon
 loads the page from Pages, so offline it shows Safari's error page rather than

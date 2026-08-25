@@ -32,6 +32,7 @@ const playOnlineButton = document.querySelector('#play-online-button');
 const startScreenEl = document.querySelector('#start-screen');
 const startHotseatButton = document.querySelector('#start-hotseat-button');
 const startErrorEl = document.querySelector('#start-error');
+const versionMarkerEl = document.querySelector('#version-marker');
 const rejoinButton = document.querySelector('#rejoin-button');
 const roomCodeInput = document.querySelector('#room-code-input');
 const joinRoomButton = document.querySelector('#join-room-button');
@@ -1167,6 +1168,11 @@ function exitToStartScreen() {
   renderStartScreen();
   startScreenEl.hidden = false;
   render();
+  /* The moment a stale build can safely be replaced: leaving is what
+     clears the hot-seat game reloadForNewVersion refuses to destroy, and
+     this is also when the marker becomes visible. Throttled like every
+     other call, so an exit-happy player cannot spam the server. */
+  checkForNewVersion();
 }
 
 exitButton.addEventListener('click', exitToStartScreen);
@@ -1651,5 +1657,128 @@ const roomFromUrl = roomCodeInUrl();
 if (roomFromUrl) {
   startOnline(roomFromUrl);
 }
+
+/* ---- Which build is running (#version-marker, checkForNewVersion) ------
+ * The ?v=N query on every local asset (see CLAUDE.md) makes a returning
+ * visitor fetch changed files, but only once their browser has fetched a
+ * fresh index.html to learn the new number - and nothing guarantees it
+ * ever does. GitHub Pages serves index.html with max-age=600, and an iOS
+ * app added to the home screen is worse than that: standalone apps resume
+ * rather than reload, so the page can keep running from whenever it was
+ * first opened, days ago, never re-fetching anything.
+ *
+ * That is not theoretical. A phone running a build older than the restart
+ * fix pressed Play Again on a finished online game and nothing happened -
+ * exactly the symptom that fix removed - while the same press on a current
+ * build restarted the game. The device gave no sign it was running
+ * anything unusual, and the only way to tell was that a line of text
+ * elsewhere still had its old wording.
+ *
+ * Two things close that. The marker says which build this device is on, so
+ * a report like that one is answerable in a second rather than inferred.
+ * And the check reloads a page whose version has moved on, which is the
+ * whole class rather than the one bug.
+ */
+const VERSION_CHECK_INTERVAL_MS = 60000;
+const RELOAD_KEY = 'bg:reload-for';
+let knownLatestVersion = null;
+let lastVersionCheck = 0;
+
+/* Read back off the page's own script tag rather than kept as a constant
+   here: a constant would be one more thing to remember to bump, and worse,
+   it would be bumped in the same commit as the tags and so could never
+   disagree with them - which is precisely the disagreement worth seeing. */
+function runningVersion() {
+  const tag = document.querySelector('script[src*="script.js?v="]');
+  const match = tag && tag.getAttribute('src').match(/v=(\d+)/);
+  return match ? match[1] : null;
+}
+
+function renderVersionMarker() {
+  const running = runningVersion();
+  if (!running) {
+    versionMarkerEl.textContent = '';
+    return;
+  }
+  const stale = Boolean(knownLatestVersion && knownLatestVersion !== running);
+  versionMarkerEl.textContent = stale
+    ? `v${running} — v${knownLatestVersion} available, reload`
+    : `v${running}`;
+  versionMarkerEl.classList.toggle('version-marker--stale', stale);
+}
+
+/* Asks the server what index.html says *now* - deliberately bypassing the
+   cache, since the cached copy is the thing under suspicion. A failure
+   here is silence: offline is the ordinary reason, and an app that
+   complained about it would be wrong far more often than right. */
+function checkForNewVersion() {
+  const running = runningVersion();
+  if (!running) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastVersionCheck < VERSION_CHECK_INTERVAL_MS) {
+    return;
+  }
+  lastVersionCheck = now;
+  fetch(`index.html?version-check=${now}`, { cache: 'no-store' })
+    .then((response) => (response.ok ? response.text() : null))
+    .then((html) => {
+      const match = html && html.match(/script\.js\?v=(\d+)/);
+      if (!match || match[1] === running) {
+        return;
+      }
+      knownLatestVersion = match[1];
+      renderVersionMarker();
+      reloadForNewVersion(match[1]);
+    })
+    .catch(() => {
+      /* offline, or the fetch was blocked; the next check can try again */
+    });
+}
+
+function reloadForNewVersion(version) {
+  /* A hot-seat game exists only in this page, so reloading would destroy
+     it - the one case where being on an old build is the lesser harm. It
+     will be picked up at the start screen instead, which is where the
+     marker is anyway. An online game is safe: every move is already in the
+     room, and the room code is in the URL, so the reload rejoins it. */
+  if (gameStarted && !onlineRoom) {
+    return;
+  }
+  /* One attempt per version per tab. If the browser hands back the same
+     cached index.html - which is exactly the situation this exists for -
+     the reload cannot help, and without this it would loop forever. */
+  let alreadyTried = null;
+  try {
+    alreadyTried = sessionStorage.getItem(RELOAD_KEY);
+  } catch (error) {
+    /* private mode: no memory of the attempt, so at most one reload per
+       page load rather than per version - lastVersionCheck still throttles */
+  }
+  if (alreadyTried === version) {
+    return;
+  }
+  try {
+    sessionStorage.setItem(RELOAD_KEY, version);
+  } catch (error) {
+    /* as above */
+  }
+  location.reload();
+}
+
+/* pageshow as well as visibilitychange: a page restored from bfcache - or
+   an iOS standalone app being resumed, which is the case this is really
+   for - does not always fire visibilitychange, and that resume is the
+   moment a days-old runtime is most likely to be sitting there. */
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    checkForNewVersion();
+  }
+});
+window.addEventListener('pageshow', checkForNewVersion);
+
+renderVersionMarker();
+checkForNewVersion();
 
 render();
