@@ -440,6 +440,23 @@ body {
   display: none;
 }
 
+/* Which build this device is running. Deliberately quiet - it is a
+   diagnostic, not something a player needs - but never hidden: a stale
+   runtime is otherwise invisible, and an iOS app added to the home screen
+   can sit on one for days (see checkForNewVersion in script.js). Amber
+   when the server has moved on and this page has not, which is the one
+   time it is worth reading. */
+#version-marker {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #777;
+  letter-spacing: 0.03em;
+}
+
+.version-marker--stale {
+  color: #e0a030;
+}
+
 /* A labelled rule, so the two online controls below read as one group
    rather than three unrelated things stacked under the hot-seat button. */
 /* Validation feedback has to live inside the panel: #message, which every
